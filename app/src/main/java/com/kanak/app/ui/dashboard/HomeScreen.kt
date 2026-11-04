@@ -66,7 +66,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "Expense Overview",
+                        text = "AMOLED Expense Tracker",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -90,55 +90,99 @@ fun HomeScreen(
 
         item {
             KanakCard(modifier = Modifier.fillMaxWidth()) {
-                Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
-                    Text(
-                        text = "TOTAL SPENT THIS MONTH",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Text(
-                        text = uiState.totalFormatted,
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    if (uiState.monthOverMonthPercent != null) {
-                        val pct = uiState.monthOverMonthPercent
-                        val isMore = pct > 0
-                        val badgeColor = if (isMore) StatusError else StatusSuccess
-                        val signStr = if (isMore) "+$pct%" else "$pct%"
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(KanakSpacing.extraSmall)
-                        ) {
+                Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.medium)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
                             Text(
-                                text = signStr,
-                                style = MaterialTheme.typography.labelLarge,
+                                text = "TODAY",
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = badgeColor
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = "vs last month (${uiState.previousTotalFormatted})",
+                                text = uiState.todayFormatted,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "TRANSACTIONS",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "${uiState.currentMonthTransactionCount} this month",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant)
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "CURRENT MONTH TOTAL",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = uiState.totalFormatted,
+                            style = MaterialTheme.typography.displayLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+
+                        if (uiState.monthOverMonthPercent != null) {
+                            val pct = uiState.monthOverMonthPercent
+                            val isMore = pct > 0
+                            val badgeColor = if (isMore) StatusError else StatusSuccess
+                            val signStr = if (isMore) "+$pct%" else "$pct%"
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(KanakSpacing.extraSmall)
+                            ) {
+                                Text(
+                                    text = signStr,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = badgeColor
+                                )
+                                Text(
+                                    text = "vs last month (${uiState.previousTotalFormatted})",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        } else if (uiState.previousMonthTotalMinor > 0L) {
+                            Text(
+                                text = "Previous month: ${uiState.previousTotalFormatted}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            Text(
+                                text = "Tracking offline expenses locally",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                    } else if (uiState.previousMonthTotalMinor > 0L) {
-                        Text(
-                            text = "Previous month: ${uiState.previousTotalFormatted}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    } else {
-                        Text(
-                            text = "Tracking offline expenses locally",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
@@ -166,7 +210,7 @@ fun HomeScreen(
         item {
             Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
                 Text(
-                    text = "SPENDING BREAKDOWN",
+                    text = "SPENDING BY CATEGORY",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -219,7 +263,7 @@ fun HomeScreen(
         }
 
         if (uiState.recentTransactions.isNotEmpty()) {
-            items(uiState.recentTransactions, key = { it.id }) { expense ->
+            items(uiState.recentTransactions.take(5), key = { it.id }) { expense ->
                 DashboardExpenseRow(expense = expense)
             }
         }

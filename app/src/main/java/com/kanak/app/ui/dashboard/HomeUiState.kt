@@ -12,7 +12,9 @@ data class CategorySpending(
 
 data class HomeUiState(
     val currentMonthYearName: String = "",
+    val todayTotalMinor: Long = 0L,
     val currentMonthTotalMinor: Long = 0L,
+    val currentMonthTransactionCount: Int = 0,
     val previousMonthTotalMinor: Long = 0L,
     val monthOverMonthPercent: Int? = null,
     val currency: String = "INR",
@@ -23,6 +25,9 @@ data class HomeUiState(
     val showQuickEntry: Boolean = false,
     val triggerVoiceOnEntry: Boolean = false
 ) {
+    val todayFormatted: String
+        get() = Expense(amountMinor = todayTotalMinor, currency = currency).amountWithSymbol()
+
     val totalFormatted: String
         get() = Expense(amountMinor = currentMonthTotalMinor, currency = currency).amountWithSymbol()
 

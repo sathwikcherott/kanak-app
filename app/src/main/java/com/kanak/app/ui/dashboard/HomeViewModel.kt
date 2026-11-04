@@ -38,6 +38,7 @@ class HomeViewModel(
 
     private fun computeDashboardState(expenses: List<Expense>) {
         val now = Calendar.getInstance()
+        val currentDay = now.get(Calendar.DAY_OF_MONTH)
         val currentMonth = now.get(Calendar.MONTH)
         val currentYear = now.get(Calendar.YEAR)
 
@@ -50,18 +51,27 @@ class HomeViewModel(
         val prevMonth = prevCal.get(Calendar.MONTH)
         val prevYear = prevCal.get(Calendar.YEAR)
 
+        val todayExpenses = expenses.filter { exp ->
+            val cal = Calendar.getInstance().apply { timeInMillis = exp.occurredAt }
+            (cal.get(Calendar.DAY_OF_MONTH) == currentDay) &&
+                    (cal.get(Calendar.MONTH) == currentMonth) &&
+                    (cal.get(Calendar.YEAR) == currentYear)
+        }
+
         val currentMonthExpenses = expenses.filter { exp ->
             val cal = Calendar.getInstance().apply { timeInMillis = exp.occurredAt }
-            cal.get(Calendar.MONTH) == currentMonth && cal.get(Calendar.YEAR) == currentYear
+            (cal.get(Calendar.MONTH) == currentMonth) && (cal.get(Calendar.YEAR) == currentYear)
         }
 
         val previousMonthExpenses = expenses.filter { exp ->
             val cal = Calendar.getInstance().apply { timeInMillis = exp.occurredAt }
-            cal.get(Calendar.MONTH) == prevMonth && cal.get(Calendar.YEAR) == prevYear
+            (cal.get(Calendar.MONTH) == prevMonth) && (cal.get(Calendar.YEAR) == prevYear)
         }
 
+        val todayTotalMinor = todayExpenses.sumOf { it.amountMinor }
         val currentMonthTotal = currentMonthExpenses.sumOf { it.amountMinor }
         val previousMonthTotal = previousMonthExpenses.sumOf { it.amountMinor }
+        val transactionCount = currentMonthExpenses.size
 
         val momChangePercent = if (previousMonthTotal > 0L) {
             val diff = currentMonthTotal - previousMonthTotal
@@ -85,12 +95,14 @@ class HomeViewModel(
             emptyList()
         }
 
-        val recent = expenses.take(10)
+        val recent = expenses.sortedByDescending { it.occurredAt }.take(5)
 
         _uiState.update {
             it.copy(
                 currentMonthYearName = monthYearName,
+                todayTotalMinor = todayTotalMinor,
                 currentMonthTotalMinor = currentMonthTotal,
+                currentMonthTransactionCount = transactionCount,
                 previousMonthTotalMinor = previousMonthTotal,
                 monthOverMonthPercent = momChangePercent,
                 categoryBreakdown = categoryBreakdown,
