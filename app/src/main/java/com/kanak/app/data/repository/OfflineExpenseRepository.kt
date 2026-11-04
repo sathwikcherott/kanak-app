@@ -4,6 +4,7 @@ import com.kanak.app.ai.CloudAiCategorizer
 import com.kanak.app.ai.model.AiCategorizationRequest
 import com.kanak.app.data.local.dao.AiEnrichmentJobDao
 import com.kanak.app.data.local.dao.ExpenseDao
+import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.data.local.datastore.UserPreferencesDataSource
 import com.kanak.app.data.local.entity.AiEnrichmentJobEntity
 import com.kanak.app.data.local.entity.EnrichmentJobStatus
@@ -56,6 +57,14 @@ class OfflineExpenseRepository(
 
     override suspend fun setDefaultCurrency(currency: String) = withContext(Dispatchers.IO) {
         userPreferencesDataSource.setDefaultCurrency(currency)
+    }
+
+    override fun getThemePreference(): Flow<ThemePreference> {
+        return userPreferencesDataSource.themePreference
+    }
+
+    override suspend fun setThemePreference(theme: ThemePreference) = withContext(Dispatchers.IO) {
+        userPreferencesDataSource.setThemePreference(theme)
     }
 
     override fun getEnrichmentJobForExpense(expenseId: Long): Flow<AiEnrichmentJobEntity?> {

@@ -1,5 +1,6 @@
 package com.kanak.app.ui.entry
 
+import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
 import com.kanak.app.model.Expense
@@ -10,7 +11,7 @@ import com.kanak.app.model.ExpenseCategory
  */
 data class QuickEntryUiState(
     val amountText: String = "",
-    val currency: String = "USD",
+    val currency: String = "INR",
     val selectedCategory: ExpenseCategory? = null,
     val note: String = "",
     val source: EntrySource = EntrySource.TYPED,
@@ -20,6 +21,7 @@ data class QuickEntryUiState(
     val voiceInputAvailable: Boolean = true,
     val amountError: String? = null,
     val userMessage: String? = null,
+    val themePreference: ThemePreference = ThemePreference.DARK,
     val recentExpenses: List<Expense> = emptyList()
 ) {
     val amountMinor: Long

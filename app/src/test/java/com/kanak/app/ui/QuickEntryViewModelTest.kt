@@ -106,10 +106,22 @@ class QuickEntryViewModelTest {
         assertEquals(CategorizationState.UNCATEGORIZED, viewModel.uiState.value.categorizationState)
     }
 
+    @Test
+    fun defaultTheme_isDark_andCanBeUpdated() = runTest {
+        val viewModel = QuickEntryViewModel(fakeRepository)
+        assertEquals(com.kanak.app.data.local.datastore.ThemePreference.DARK, viewModel.uiState.value.themePreference)
+
+        viewModel.onThemePreferenceChanged(com.kanak.app.data.local.datastore.ThemePreference.LIGHT)
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals(com.kanak.app.data.local.datastore.ThemePreference.LIGHT, viewModel.uiState.value.themePreference)
+    }
+
     private class FakeExpenseRepository : ExpenseRepository {
         val savedExpenses = mutableListOf<Expense>()
         private val expensesFlow = MutableStateFlow<List<Expense>>(emptyList())
-        private val currencyFlow = MutableStateFlow("USD")
+        private val currencyFlow = MutableStateFlow("INR")
+        private val themeFlow = MutableStateFlow(com.kanak.app.data.local.datastore.ThemePreference.DARK)
 
         override fun getAllExpenses(): Flow<List<Expense>> = expensesFlow
         override fun getExpenseById(id: Long): Flow<Expense?> = flowOf(null)
@@ -122,6 +134,10 @@ class QuickEntryViewModelTest {
         override fun getDefaultCurrency(): Flow<String> = currencyFlow
         override suspend fun setDefaultCurrency(currency: String) {
             currencyFlow.value = currency
+        }
+        override fun getThemePreference(): Flow<com.kanak.app.data.local.datastore.ThemePreference> = themeFlow
+        override suspend fun setThemePreference(theme: com.kanak.app.data.local.datastore.ThemePreference) {
+            themeFlow.value = theme
         }
         override fun getEnrichmentJobForExpense(expenseId: Long): Flow<com.kanak.app.data.local.entity.AiEnrichmentJobEntity?> = flowOf(null)
     }

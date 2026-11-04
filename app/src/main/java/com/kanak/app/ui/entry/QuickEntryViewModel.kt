@@ -3,6 +3,7 @@ package com.kanak.app.ui.entry
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.data.repository.ExpenseRepository
 import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
@@ -24,7 +25,10 @@ class QuickEntryViewModel(
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
-        QuickEntryUiState(voiceInputAvailable = voiceInputRepository?.isAvailable ?: true)
+        QuickEntryUiState(
+            voiceInputAvailable = voiceInputRepository?.isAvailable ?: true,
+            themePreference = ThemePreference.DARK
+        )
     )
     val uiState: StateFlow<QuickEntryUiState> = _uiState.asStateFlow()
 
@@ -32,6 +36,11 @@ class QuickEntryViewModel(
         viewModelScope.launch {
             expenseRepository.getDefaultCurrency().collectLatest { currency ->
                 _uiState.update { it.copy(currency = currency) }
+            }
+        }
+        viewModelScope.launch {
+            expenseRepository.getThemePreference().collectLatest { theme ->
+                _uiState.update { it.copy(themePreference = theme) }
             }
         }
         viewModelScope.launch {
@@ -64,7 +73,22 @@ class QuickEntryViewModel(
     }
 
     fun onNoteChanged(note: String) {
-        _uiState.update { it.copy(note = note, source = EntrySource.TYPED) }
+        _uiState.update { current ->
+            if (current.categorizationState == CategorizationState.CONFIRMED) {
+                // User has manually confirmed category choice -> preserve user's choice!
+                current.copy(note = note, source = EntrySource.TYPED)
+            } else {
+                // Re-infer category dynamically as description is edited
+                val inferredCategory = VoiceDraftParser.inferCategory(note)
+                val newState = if (inferredCategory != null) CategorizationState.AUTO_CATEGORIZED else CategorizationState.UNCATEGORIZED
+                current.copy(
+                    note = note,
+                    selectedCategory = inferredCategory,
+                    categorizationState = newState,
+                    source = EntrySource.TYPED
+                )
+            }
+        }
     }
 
     fun onCurrencyChanged(currency: String) {
@@ -74,9 +98,16 @@ class QuickEntryViewModel(
         }
     }
 
+    fun onThemePreferenceChanged(theme: ThemePreference) {
+        _uiState.update { it.copy(themePreference = theme) }
+        viewModelScope.launch {
+            expenseRepository.setThemePreference(theme)
+        }
+    }
+
     fun onMicTapped() {
         val repo = voiceInputRepository
-        if (repo == null || !repo.isAvailable) {
+        if ((repo == null) || (!repo.isAvailable)) {
             _uiState.update {
                 it.copy(userMessage = "Voice recognition is not available on this device")
             }
@@ -99,10 +130,10 @@ class QuickEntryViewModel(
                     val error = if (draft.amountText.isNotEmpty() && minor <= 0L) "Amount must be greater than zero" else null
                     current.copy(
                         amountText = if (draft.amountText.isNotBlank()) draft.amountText else current.amountText,
-                        selectedCategory = draft.category ?: current.selectedCategory,
+                        selectedCategory = draft.category, // Independent initialization; NEVER inherit stale categories!
                         note = if (draft.note.isNotBlank()) draft.note else current.note,
                         source = EntrySource.VOICE,
-                        categorizationState = if (draft.category != null) CategorizationState.CONFIRMED else CategorizationState.AUTO_CATEGORIZED,
+                        categorizationState = if (draft.category != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
                         isListening = false,
                         amountError = error,
                         userMessage = "Voice draft populated! Review and edit if needed."

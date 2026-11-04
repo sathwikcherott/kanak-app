@@ -61,6 +61,56 @@ class QuickEntryViewModelVoiceTest {
     }
 
     @Test
+    fun voiceDraft_neverInheritsPreviousCategoryFromEarlierTransaction() = runTest {
+        val fakeVoiceRepo = FakeVoiceInputRepository(
+            isAvailable = true,
+            mockTranscript = "120 chicken biryani"
+        )
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo)
+
+        // 1. User previously had TRANSPORT selected
+        viewModel.onCategorySelected(ExpenseCategory.TRANSPORT)
+        assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
+
+        // 2. Speak new voice draft
+        viewModel.onMicTapped()
+
+        // 3. Category MUST NOT inherit TRANSPORT; it must independently infer FOOD
+        assertEquals("120", viewModel.uiState.value.amountText)
+        assertEquals(ExpenseCategory.FOOD, viewModel.uiState.value.selectedCategory)
+        assertEquals("120 chicken biryani", viewModel.uiState.value.note)
+    }
+
+    @Test
+    fun onNoteChanged_preservesManuallySelectedCategoryAndDoesNotOverwriteWithAutoInference() = runTest {
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository)
+
+        // User explicitly taps & confirms BILL
+        viewModel.onCategorySelected(ExpenseCategory.BILL)
+        assertEquals(ExpenseCategory.BILL, viewModel.uiState.value.selectedCategory)
+        assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
+
+        // User edits note with words containing food keywords ("swiggy")
+        viewModel.onNoteChanged("Swiggy bill for office party")
+
+        // User's manually confirmed category BILL MUST BE PRESERVED
+        assertEquals(ExpenseCategory.BILL, viewModel.uiState.value.selectedCategory)
+        assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
+    }
+
+    @Test
+    fun onNoteChanged_reInfersCategoryWhenNotManuallyConfirmed() = runTest {
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository)
+
+        // User types description without selecting category
+        viewModel.onNoteChanged("80 bus ticket to metro station")
+
+        // Category is dynamically auto-inferred as TRANSPORT
+        assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
+        assertEquals(CategorizationState.AUTO_CATEGORIZED, viewModel.uiState.value.categorizationState)
+    }
+
+    @Test
     fun voiceDraft_usesSameValidationAndSavePathAsTypedInput() = runTest {
         val fakeVoiceRepo = FakeVoiceInputRepository(
             isAvailable = true,
@@ -121,7 +171,7 @@ class QuickEntryViewModelVoiceTest {
     private class FakeExpenseRepository : ExpenseRepository {
         val savedExpenses = mutableListOf<Expense>()
         private val expensesFlow = MutableStateFlow<List<Expense>>(emptyList())
-        private val currencyFlow = MutableStateFlow("USD")
+        private val currencyFlow = MutableStateFlow("INR")
 
         override fun getAllExpenses(): Flow<List<Expense>> = expensesFlow
         override fun getExpenseById(id: Long): Flow<Expense?> = flowOf(null)
@@ -133,6 +183,11 @@ class QuickEntryViewModelVoiceTest {
         override suspend fun deleteExpense(id: Long) {}
         override fun getDefaultCurrency(): Flow<String> = currencyFlow
         override suspend fun setDefaultCurrency(currency: String) {}
+        private val themeFlow = MutableStateFlow(com.kanak.app.data.local.datastore.ThemePreference.DARK)
+        override fun getThemePreference(): Flow<com.kanak.app.data.local.datastore.ThemePreference> = themeFlow
+        override suspend fun setThemePreference(theme: com.kanak.app.data.local.datastore.ThemePreference) {
+            themeFlow.value = theme
+        }
         override fun getEnrichmentJobForExpense(expenseId: Long): Flow<com.kanak.app.data.local.entity.AiEnrichmentJobEntity?> = flowOf(null)
     }
 }

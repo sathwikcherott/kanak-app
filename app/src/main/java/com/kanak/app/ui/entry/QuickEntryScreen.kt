@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,30 +23,29 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.kanak.app.designsystem.components.KanakAmountInput
+import com.kanak.app.designsystem.components.CategoryIcon
+import com.kanak.app.designsystem.components.KanakAmountCard
 import com.kanak.app.designsystem.components.KanakCard
-import com.kanak.app.designsystem.components.KanakCategoryChip
+import com.kanak.app.designsystem.components.KanakCategoryCard
 import com.kanak.app.designsystem.components.KanakCategorizationBadge
 import com.kanak.app.designsystem.components.KanakPrimaryButton
 import com.kanak.app.designsystem.components.KanakSourceBadge
@@ -104,36 +105,25 @@ fun QuickEntryScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Quick Expense Entry",
-                        style = MaterialTheme.typography.titleLarge
+                        text = "Kanak",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 },
                 actions = {
-                    if (uiState.voiceInputAvailable) {
-                        IconButton(
-                            onClick = { handleMicClick() },
-                            modifier = Modifier.semantics {
-                                contentDescription = if (uiState.isListening) "Stop voice input" else "Start voice input"
-                            }
-                        ) {
-                            if (uiState.isListening) {
-                                CircularProgressIndicator(
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.height(24.dp)
-                                )
-                            } else {
-                                Text(
-                                    text = "🎤",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                            }
-                        }
-                    }
-                }
+                    KanakSourceBadge(source = uiState.source, modifier = Modifier.padding(end = KanakSpacing.medium))
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = MaterialTheme.colorScheme.background,
         modifier = modifier
+            .navigationBarsPadding()
+            .imePadding()
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -143,38 +133,26 @@ fun QuickEntryScreen(
             verticalArrangement = Arrangement.spacedBy(KanakSpacing.medium)
         ) {
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "New Transaction",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    KanakSourceBadge(source = uiState.source)
-                }
-
                 AnimatedVisibility(visible = uiState.isListening) {
                     Text(
-                        text = "Listening... Speak your expense (e.g. '15 dollars for lunch')",
+                        text = "Listening... Speak amount & category (e.g. '250 for lunch')",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(bottom = KanakSpacing.extraSmall)
                     )
                 }
-            }
 
-            item {
-                KanakAmountInput(
+                KanakAmountCard(
                     value = uiState.amountText,
                     onValueChange = onAmountChanged,
-                    currencySymbol = uiState.currency,
+                    currencySymbol = Expense.getCurrencySymbol(uiState.currency),
                     isError = uiState.amountError != null,
                     errorMessage = uiState.amountError,
+                    isListening = uiState.isListening,
+                    voiceInputAvailable = uiState.voiceInputAvailable,
+                    onMicTapped = { handleMicClick() },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Decimal,
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
                         imeAction = ImeAction.Next
                     )
                 )
@@ -188,8 +166,10 @@ fun QuickEntryScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Category",
-                            style = MaterialTheme.typography.titleMedium
+                            text = "CATEGORY",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         KanakCategorizationBadge(state = uiState.categorizationState)
                     }
@@ -199,13 +179,13 @@ fun QuickEntryScreen(
                         verticalArrangement = Arrangement.spacedBy(KanakSpacing.small),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .semantics { contentDescription = "Category selector chips" }
+                            .semantics { contentDescription = "Category grid" }
                     ) {
                         ExpenseCategory.entries.forEach { category ->
-                            KanakCategoryChip(
+                            KanakCategoryCard(
+                                category = category,
                                 selected = uiState.selectedCategory == category,
-                                onClick = { onCategorySelected(category) },
-                                label = category.displayName
+                                onClick = { onCategorySelected(category) }
                             )
                         }
                     }
@@ -216,8 +196,8 @@ fun QuickEntryScreen(
                 KanakTextField(
                     value = uiState.note,
                     onValueChange = onNoteChanged,
-                    label = "Optional Note",
-                    placeholder = "e.g. Coffee at Starbucks",
+                    label = "Description",
+                    placeholder = "Optional note (e.g. Coffee with team)",
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { onSaveClicked() })
                 )
@@ -237,7 +217,8 @@ fun QuickEntryScreen(
                     } else {
                         Text(
                             text = "Save Expense",
-                            style = MaterialTheme.typography.titleMedium
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
@@ -247,8 +228,10 @@ fun QuickEntryScreen(
                 item {
                     Spacer(modifier = Modifier.height(KanakSpacing.small))
                     Text(
-                        text = "Recent Offline Expenses",
-                        style = MaterialTheme.typography.titleMedium
+                        text = "RECENT TRANSACTIONS",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
@@ -271,22 +254,36 @@ private fun ExpenseItemCard(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = expense.category?.displayName ?: "Uncategorized",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                expense.note?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(KanakSpacing.medium)
+            ) {
+                expense.category?.let { cat ->
+                    CategoryIcon(
+                        category = cat,
+                        tint = MaterialTheme.colorScheme.primary,
+                        size = 22.dp
                     )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = expense.category?.displayName ?: "Uncategorized",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    expense.note?.let {
+                        Text(
+                            text = it,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             Text(
-                text = "${expense.currency} ${expense.amountAsFormattedString()}",
+                text = expense.amountWithSymbol(),
                 style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
         }

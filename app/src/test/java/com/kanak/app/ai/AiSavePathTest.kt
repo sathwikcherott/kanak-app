@@ -323,10 +323,17 @@ class AiSavePathTest {
     }
 
     private class FakeUserPreferencesDataSource : UserPreferencesDataSource {
-        private val _currency = MutableStateFlow("USD")
+        private val _currency = MutableStateFlow("INR")
+        private val _theme = MutableStateFlow(com.kanak.app.data.local.datastore.ThemePreference.DARK)
+
         override val defaultCurrency: Flow<String> = _currency
         override suspend fun setDefaultCurrency(currency: String) {
             _currency.value = currency
+        }
+
+        override val themePreference: Flow<com.kanak.app.data.local.datastore.ThemePreference> = _theme
+        override suspend fun setThemePreference(theme: com.kanak.app.data.local.datastore.ThemePreference) {
+            _theme.value = theme
         }
     }
 }
