@@ -178,6 +178,9 @@ class MainActivity : ComponentActivity() {
                                 onAmountChanged = quickEntryViewModel::onAmountChanged,
                                 onCategorySelected = quickEntryViewModel::onCategorySelected,
                                 onNoteChanged = quickEntryViewModel::onNoteChanged,
+                                onDateOptionSelected = quickEntryViewModel::onDateOptionSelected,
+                                onDateChosenFromPicker = quickEntryViewModel::onDateChosenFromPicker,
+                                onDismissDatePicker = quickEntryViewModel::onDismissDatePicker,
                                 onMicTapped = quickEntryViewModel::onMicTapped,
                                 onVoicePermissionDenied = quickEntryViewModel::onVoicePermissionDenied,
                                 onSaveClicked = {

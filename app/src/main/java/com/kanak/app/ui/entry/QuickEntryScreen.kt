@@ -5,7 +5,11 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -19,22 +23,29 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -45,14 +56,17 @@ import androidx.core.content.ContextCompat
 import com.kanak.app.designsystem.components.CategoryIcon
 import com.kanak.app.designsystem.components.KanakAmountCard
 import com.kanak.app.designsystem.components.KanakCard
-import com.kanak.app.designsystem.components.KanakCategoryCard
 import com.kanak.app.designsystem.components.KanakCategorizationBadge
+import com.kanak.app.designsystem.components.KanakCategoryCard
 import com.kanak.app.designsystem.components.KanakPrimaryButton
 import com.kanak.app.designsystem.components.KanakSourceBadge
 import com.kanak.app.designsystem.components.KanakTextField
+import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
+import java.util.Calendar
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -61,11 +75,14 @@ fun QuickEntryScreen(
     onAmountChanged: (String) -> Unit,
     onCategorySelected: (ExpenseCategory?) -> Unit,
     onNoteChanged: (String) -> Unit,
+    onDateOptionSelected: (ExpenseDateOption) -> Unit,
+    onDateChosenFromPicker: (Long) -> Unit,
+    onDismissDatePicker: () -> Unit,
     onMicTapped: () -> Unit,
     onVoicePermissionDenied: () -> Unit,
     onSaveClicked: () -> Unit,
     onClearUserMessage: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -166,6 +183,75 @@ fun QuickEntryScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
+                            text = "EXPENSE DATE",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = uiState.selectedDateFormatted,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(KanakSpacing.small)
+                    ) {
+                        ExpenseDateOption.entries.forEach { option ->
+                            val selected = option == uiState.selectedDateOption
+                            val shape = RoundedCornerShape(KanakCornerRadius.pill)
+                            val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                            val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                            val textColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+
+                            val displayText = when (option) {
+                                ExpenseDateOption.TODAY -> "Today"
+                                ExpenseDateOption.YESTERDAY -> "Yesterday"
+                                ExpenseDateOption.CHOSEN_DATE -> if (selected) uiState.selectedDateFormatted else "Choose date"
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(shape)
+                                    .background(bg)
+                                    .border(if (selected) 1.5.dp else 1.dp, border, shape)
+                                    .clickable { onDateOptionSelected(option) }
+                                    .padding(vertical = KanakSpacing.small, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = displayText,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = textColor,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
+
+                    if (uiState.dateError != null) {
+                        Text(
+                            text = uiState.dateError,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
                             text = "CATEGORY",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Bold,
@@ -241,6 +327,75 @@ fun QuickEntryScreen(
             }
         }
     }
+
+    if (uiState.showDatePicker) {
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = uiState.selectedDateMillis,
+            selectableDates = object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                    val todayMaxUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                        set(Calendar.HOUR_OF_DAY, 23)
+                        set(Calendar.MINUTE, 59)
+                        set(Calendar.SECOND, 59)
+                    }.timeInMillis
+                    return utcTimeMillis <= todayMaxUtc
+                }
+            }
+        )
+
+        DatePickerDialog(
+            onDismissRequest = onDismissDatePicker,
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        datePickerState.selectedDateMillis?.let { utcMillis ->
+                            onDateChosenFromPicker(utcMillis)
+                        }
+                    }
+                ) {
+                    Text("Select", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = onDismissDatePicker) {
+                    Text("Cancel")
+                }
+            }
+        ) {
+            DatePicker(state = datePickerState)
+        }
+    }
+}
+
+/**
+ * Backward compatibility overload for legacy callers without date callbacks.
+ */
+@Composable
+fun QuickEntryScreen(
+    uiState: QuickEntryUiState,
+    onAmountChanged: (String) -> Unit,
+    onCategorySelected: (ExpenseCategory?) -> Unit,
+    onNoteChanged: (String) -> Unit,
+    onMicTapped: () -> Unit,
+    onVoicePermissionDenied: () -> Unit,
+    onSaveClicked: () -> Unit,
+    onClearUserMessage: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    QuickEntryScreen(
+        uiState = uiState,
+        onAmountChanged = onAmountChanged,
+        onCategorySelected = onCategorySelected,
+        onNoteChanged = onNoteChanged,
+        onDateOptionSelected = {},
+        onDateChosenFromPicker = {},
+        onDismissDatePicker = {},
+        onMicTapped = onMicTapped,
+        onVoicePermissionDenied = onVoicePermissionDenied,
+        onSaveClicked = onSaveClicked,
+        onClearUserMessage = onClearUserMessage,
+        modifier = modifier
+    )
 }
 
 @Composable

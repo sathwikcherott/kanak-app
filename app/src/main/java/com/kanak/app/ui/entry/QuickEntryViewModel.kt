@@ -18,16 +18,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.Calendar
+import java.util.TimeZone
 
 class QuickEntryViewModel(
     private val expenseRepository: ExpenseRepository,
-    private val voiceInputRepository: VoiceInputRepository? = null
+    private val voiceInputRepository: VoiceInputRepository? = null,
+    private val timeProvider: () -> Long = { System.currentTimeMillis() },
+    private val timeZone: TimeZone = TimeZone.getDefault(),
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         QuickEntryUiState(
             voiceInputAvailable = voiceInputRepository?.isAvailable ?: true,
-            themePreference = ThemePreference.DARK
+            themePreference = ThemePreference.DARK,
+            selectedDateOption = ExpenseDateOption.TODAY,
+            selectedDateMillis = timeProvider()
         )
     )
     val uiState: StateFlow<QuickEntryUiState> = _uiState.asStateFlow()
@@ -75,10 +81,8 @@ class QuickEntryViewModel(
     fun onNoteChanged(note: String) {
         _uiState.update { current ->
             if (current.categorizationState == CategorizationState.CONFIRMED) {
-                // User has manually confirmed category choice -> preserve user's choice!
                 current.copy(note = note, source = EntrySource.TYPED)
             } else {
-                // Re-infer category dynamically as description is edited
                 val inferredCategory = VoiceDraftParser.inferCategory(note)
                 val newState = if (inferredCategory != null) CategorizationState.AUTO_CATEGORIZED else CategorizationState.UNCATEGORIZED
                 current.copy(
@@ -89,6 +93,64 @@ class QuickEntryViewModel(
                 )
             }
         }
+    }
+
+    fun onDateOptionSelected(option: ExpenseDateOption) {
+        val now = timeProvider()
+        when (option) {
+            ExpenseDateOption.TODAY -> {
+                _uiState.update {
+                    it.copy(
+                        selectedDateOption = ExpenseDateOption.TODAY,
+                        selectedDateMillis = now,
+                        showDatePicker = false,
+                        dateError = null
+                    )
+                }
+            }
+            ExpenseDateOption.YESTERDAY -> {
+                val cal = Calendar.getInstance(timeZone).apply { timeInMillis = now }
+                cal.add(Calendar.DAY_OF_YEAR, -1)
+                _uiState.update {
+                    it.copy(
+                        selectedDateOption = ExpenseDateOption.YESTERDAY,
+                        selectedDateMillis = cal.timeInMillis,
+                        showDatePicker = false,
+                        dateError = null
+                    )
+                }
+            }
+            ExpenseDateOption.CHOSEN_DATE -> {
+                _uiState.update { it.copy(showDatePicker = true) }
+            }
+        }
+    }
+
+    fun onDateChosenFromPicker(utcMillis: Long) {
+        val convertedMillis = convertPickerUtcToLocalMillis(utcMillis, timeProvider, timeZone)
+        val isFuture = isDateInFuture(convertedMillis, timeProvider, timeZone)
+
+        if (isFuture) {
+            _uiState.update {
+                it.copy(
+                    showDatePicker = false,
+                    dateError = "Future dates are not allowed"
+                )
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    selectedDateOption = ExpenseDateOption.CHOSEN_DATE,
+                    selectedDateMillis = convertedMillis,
+                    showDatePicker = false,
+                    dateError = null
+                )
+            }
+        }
+    }
+
+    fun onDismissDatePicker() {
+        _uiState.update { it.copy(showDatePicker = false) }
     }
 
     fun onCurrencyChanged(currency: String) {
@@ -130,7 +192,7 @@ class QuickEntryViewModel(
                     val error = if (draft.amountText.isNotEmpty() && minor <= 0L) "Amount must be greater than zero" else null
                     current.copy(
                         amountText = if (draft.amountText.isNotBlank()) draft.amountText else current.amountText,
-                        selectedCategory = draft.category, // Independent initialization; NEVER inherit stale categories!
+                        selectedCategory = draft.category,
                         note = if (draft.note.isNotBlank()) draft.note else current.note,
                         source = EntrySource.VOICE,
                         categorizationState = if (draft.category != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
@@ -169,31 +231,46 @@ class QuickEntryViewModel(
             return
         }
 
+        val targetOccurredAt = if (currentState.selectedDateOption == ExpenseDateOption.TODAY) {
+            timeProvider()
+        } else {
+            currentState.selectedDateMillis
+        }
+
+        if (isDateInFuture(targetOccurredAt, timeProvider, timeZone)) {
+            _uiState.update { it.copy(dateError = "Future dates are not allowed") }
+            return
+        }
+
         if (currentState.isSaving) return
 
-        _uiState.update { it.copy(isSaving = true, amountError = null) }
+        _uiState.update { it.copy(isSaving = true, amountError = null, dateError = null) }
 
         viewModelScope.launch {
             try {
                 val expense = Expense(
                     amountMinor = currentState.amountMinor,
                     currency = currentState.currency,
-                    occurredAt = System.currentTimeMillis(),
+                    occurredAt = targetOccurredAt,
                     note = currentState.note.ifBlank { null },
                     category = currentState.selectedCategory,
                     source = currentState.source,
                     categorizationState = if (currentState.selectedCategory != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED
                 )
                 expenseRepository.saveExpense(expense)
+                val now = timeProvider()
                 _uiState.update {
                     it.copy(
                         amountText = "",
                         note = "",
                         selectedCategory = null,
+                        selectedDateOption = ExpenseDateOption.TODAY,
+                        selectedDateMillis = now,
                         source = EntrySource.TYPED,
                         categorizationState = CategorizationState.UNCATEGORIZED,
                         isSaving = false,
                         amountError = null,
+                        dateError = null,
                         userMessage = "Expense recorded successfully!"
                     )
                 }
@@ -217,13 +294,55 @@ class QuickEntryViewModel(
         voiceInputRepository?.destroy()
     }
 
+    companion object {
+        fun convertPickerUtcToLocalMillis(
+            utcMillis: Long,
+            timeProvider: () -> Long = { System.currentTimeMillis() },
+            timeZone: TimeZone = TimeZone.getDefault()
+        ): Long {
+            val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+                timeInMillis = utcMillis
+            }
+            val year = utcCal.get(Calendar.YEAR)
+            val month = utcCal.get(Calendar.MONTH)
+            val day = utcCal.get(Calendar.DAY_OF_MONTH)
+
+            val localCal = Calendar.getInstance(timeZone).apply {
+                timeInMillis = timeProvider()
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, day)
+            }
+            return localCal.timeInMillis
+        }
+
+        fun isDateInFuture(
+            targetMillis: Long,
+            timeProvider: () -> Long = { System.currentTimeMillis() },
+            timeZone: TimeZone = TimeZone.getDefault()
+        ): Boolean {
+            val nowCal = Calendar.getInstance(timeZone).apply { timeInMillis = timeProvider() }
+            val targetCal = Calendar.getInstance(timeZone).apply { timeInMillis = targetMillis }
+
+            val nowYear = nowCal.get(Calendar.YEAR)
+            val nowDay = nowCal.get(Calendar.DAY_OF_YEAR)
+
+            val targetYear = targetCal.get(Calendar.YEAR)
+            val targetDay = targetCal.get(Calendar.DAY_OF_YEAR)
+
+            return (targetYear > nowYear) || (targetYear == nowYear && targetDay > nowDay)
+        }
+    }
+
     class Factory(
         private val repository: ExpenseRepository,
-        private val voiceInputRepository: VoiceInputRepository? = null
+        private val voiceInputRepository: VoiceInputRepository? = null,
+        private val timeProvider: () -> Long = { System.currentTimeMillis() },
+        private val timeZone: TimeZone = TimeZone.getDefault()
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return QuickEntryViewModel(repository, voiceInputRepository) as T
+            return QuickEntryViewModel(repository, voiceInputRepository, timeProvider, timeZone) as T
         }
     }
 }
