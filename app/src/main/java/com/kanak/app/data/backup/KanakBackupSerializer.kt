@@ -10,6 +10,7 @@ object KanakBackupSerializer {
     fun toJson(backup: KanakBackup): String {
         val sb = StringBuilder()
         sb.append("{\n")
+        sb.append("  \"format\": \"").append(escapeJson(backup.format)).append("\",\n")
         sb.append("  \"version\": ").append(backup.version).append(",\n")
         sb.append("  \"exportedAt\": ").append(backup.exportedAt).append(",\n")
         sb.append("  \"appVersion\": \"").append(escapeJson(backup.appVersion)).append("\",\n")
@@ -36,100 +37,143 @@ object KanakBackupSerializer {
     }
 
     fun fromJson(jsonString: String): KanakBackup {
-        val rootMap = try {
-            SimpleJsonParser(jsonString).parseRoot()
-        } catch (e: Exception) {
-            throw BackupException.CorruptedJson("Invalid JSON structure: ${e.message}")
+        val rootMap = SimpleJsonParser(jsonString).parseRoot()
+
+        // Format validation
+        val format = rootMap["format"] as? String
+            ?: throw BackupException.InvalidFormat("Missing or invalid 'format' identifier in backup")
+        if (format != KanakBackup.FORMAT_IDENTIFIER) {
+            throw BackupException.InvalidFormat("Unsupported backup format: '$format'")
         }
 
-        val versionNum = (rootMap["version"] as? Number)?.toInt()
-            ?: throw BackupException.CorruptedJson("Missing or invalid 'version' in backup")
-
-        if (versionNum > KanakBackup.CURRENT_BACKUP_VERSION) {
-            throw BackupException.UnsupportedSchemaVersion(versionNum)
+        // Schema version validation
+        val versionRaw = rootMap["version"]
+        if (versionRaw !is Long) {
+            throw BackupException.CorruptedJson("Missing or invalid integer 'version' in backup")
         }
-        if (versionNum <= 0) {
-            throw BackupException.CorruptedJson("Invalid schema version: $versionNum")
+        val version = versionRaw.toInt()
+        if (version != KanakBackup.CURRENT_BACKUP_VERSION) {
+            throw BackupException.UnsupportedSchemaVersion(version)
         }
 
-        val exportedAt = (rootMap["exportedAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+        val exportedAtRaw = rootMap["exportedAt"]
+        if (exportedAtRaw !is Long) {
+            throw BackupException.CorruptedJson("Missing or invalid integer 'exportedAt' timestamp in backup")
+        }
+
         val appVersion = rootMap["appVersion"] as? String ?: "1.0"
 
+        // Preferences validation
         val prefMap = rootMap["preferences"] as? Map<*, *>
-        val defaultCurrency = prefMap?.get("defaultCurrency") as? String ?: "INR"
-        val themePrefStr = prefMap?.get("themePreference") as? String ?: "DARK"
+            ?: throw BackupException.MissingRequiredField("Missing 'preferences' object in backup")
+
+        val defaultCurrency = prefMap["defaultCurrency"] as? String
+            ?: throw BackupException.MissingRequiredField("Missing 'defaultCurrency' in preferences")
+        if (defaultCurrency.isBlank()) {
+            throw BackupException.MissingRequiredField("Blank 'defaultCurrency' in preferences")
+        }
+
+        val themePrefStr = prefMap["themePreference"] as? String
+            ?: throw BackupException.MissingRequiredField("Missing 'themePreference' in preferences")
         val themePreference = try {
             ThemePreference.valueOf(themePrefStr)
         } catch (_: Exception) {
-            ThemePreference.DARK
+            throw BackupException.UnknownEnum("Unknown theme preference: '$themePrefStr'")
         }
 
         val preferences = BackupPreferences(
             defaultCurrency = defaultCurrency,
-            themePreference = themePreference
+            themePreference = themePreference,
         )
 
+        // Expenses array validation
         val expensesList = rootMap["expenses"] as? List<*>
-            ?: throw BackupException.CorruptedJson("Missing or invalid 'expenses' list")
+            ?: throw BackupException.CorruptedJson("Missing or invalid 'expenses' list in backup")
+
+        if (expensesList.size > KanakBackup.MAX_EXPENSE_RECORDS) {
+            throw BackupException.LimitExceeded("Backup exceeds maximum record count (${KanakBackup.MAX_EXPENSE_RECORDS})")
+        }
 
         val seenIds = HashSet<Long>()
-        val backupExpenses = mutableListOf<BackupExpense>()
+        val backupExpenses = ArrayList<BackupExpense>(expensesList.size)
 
         expensesList.forEachIndexed { index, item ->
             val expMap = item as? Map<*, *>
-                ?: throw BackupException.CorruptedJson("Expense at index $index is not a valid JSON object")
+                ?: throw BackupException.CorruptedJson("Expense item at index $index is not a valid JSON object")
 
-            val id = (expMap["id"] as? Number)?.toLong()
-                ?: throw BackupException.MissingRequiredField("Missing required field 'id' at index $index")
-
-            if (!seenIds.add(id)) {
-                throw BackupException.DuplicateExpenseIds("Duplicate expense ID found: $id")
+            // ID validation
+            val idRaw = expMap["id"]
+            if (idRaw !is Long) {
+                throw BackupException.MissingRequiredField("Missing or invalid integer 'id' for expense record at index $index")
+            }
+            if (idRaw <= 0L) {
+                throw BackupException.MissingRequiredField("Invalid non-positive ID ($idRaw) for expense record at index $index")
+            }
+            if (!seenIds.add(idRaw)) {
+                throw BackupException.DuplicateExpenseIds("Duplicate expense ID found: $idRaw")
             }
 
-            val amountMinor = (expMap["amountMinor"] as? Number)?.toLong()
-                ?: throw BackupException.MissingRequiredField("Missing required field 'amountMinor' for expense ID $id")
-
-            if (amountMinor < 0L) {
-                throw BackupException.InvalidMonetaryValue("Negative amount ($amountMinor) for expense ID $id")
+            // Amount validation (strictly positive: amount > 0L)
+            val amountRaw = expMap["amountMinor"]
+            if (amountRaw !is Long) {
+                throw BackupException.InvalidMonetaryValue("Missing or non-integer 'amountMinor' for expense ID $idRaw")
+            }
+            if (amountRaw <= 0L) {
+                throw BackupException.InvalidMonetaryValue("Invalid zero or negative monetary amount ($amountRaw) for expense ID $idRaw")
             }
 
-            val occurredAt = (expMap["occurredAt"] as? Number)?.toLong()
-                ?: throw BackupException.MissingRequiredField("Missing required field 'occurredAt' for expense ID $id")
+            // Currency validation
+            val currency = expMap["currency"] as? String
+                ?: throw BackupException.MissingRequiredField("Missing 'currency' for expense ID $idRaw")
+            if (currency.isBlank()) {
+                throw BackupException.MissingRequiredField("Blank currency for expense ID $idRaw")
+            }
 
-            val currency = expMap["currency"] as? String ?: "INR"
+            // Timestamp validation
+            val occurredAtRaw = expMap["occurredAt"]
+            if (occurredAtRaw !is Long || occurredAtRaw <= 0L) {
+                throw BackupException.MissingRequiredField("Missing or invalid 'occurredAt' timestamp for expense ID $idRaw")
+            }
+
+            // Note (optional)
             val note = expMap["note"] as? String
 
+            // Category validation (nullable, but if non-null must match enum strictly)
             val categoryStr = expMap["category"] as? String
-            val category = if (categoryStr != null) {
+            val category: ExpenseCategory? = if (categoryStr != null) {
                 try {
                     ExpenseCategory.valueOf(categoryStr)
                 } catch (_: Exception) {
-                    null
+                    throw BackupException.UnknownEnum("Unknown expense category: '$categoryStr' for expense ID $idRaw")
                 }
             } else {
                 null
             }
 
-            val sourceStr = expMap["source"] as? String ?: "TYPED"
+            // Source validation
+            val sourceStr = expMap["source"] as? String
+                ?: throw BackupException.MissingRequiredField("Missing 'source' for expense ID $idRaw")
             val source = try {
                 EntrySource.valueOf(sourceStr)
             } catch (_: Exception) {
-                EntrySource.TYPED
+                throw BackupException.UnknownEnum("Unknown entry source: '$sourceStr' for expense ID $idRaw")
             }
 
-            val catStateStr = expMap["categorizationState"] as? String ?: "CONFIRMED"
+            // CategorizationState validation
+            val stateStr = expMap["categorizationState"] as? String
+                ?: throw BackupException.MissingRequiredField("Missing 'categorizationState' for expense ID $idRaw")
             val categorizationState = try {
-                CategorizationState.valueOf(catStateStr)
+                CategorizationState.valueOf(stateStr)
             } catch (_: Exception) {
-                CategorizationState.CONFIRMED
+                throw BackupException.UnknownEnum("Unknown categorization state: '$stateStr' for expense ID $idRaw")
             }
 
             backupExpenses.add(
                 BackupExpense(
-                    id = id,
-                    amountMinor = amountMinor,
+                    id = idRaw,
+                    amountMinor = amountRaw,
                     currency = currency,
-                    occurredAt = occurredAt,
+                    occurredAt = occurredAtRaw,
                     note = note,
                     category = category,
                     source = source,
@@ -139,11 +183,12 @@ object KanakBackupSerializer {
         }
 
         return KanakBackup(
-            version = versionNum,
-            exportedAt = exportedAt,
+            format = format,
+            version = version,
+            exportedAt = exportedAtRaw,
             appVersion = appVersion,
             preferences = preferences,
-            expenses = backupExpenses
+            expenses = backupExpenses.toList()
         )
     }
 
@@ -171,34 +216,47 @@ object KanakBackupSerializer {
     }
 }
 
-private class SimpleJsonParser(json: String) {
+private class SimpleJsonParser(private val json: String) {
     private var index = 0
-    private val trimmed = json.trim()
+    private val len = json.length
+
+    init {
+        if (json.toByteArray(Charsets.UTF_8).size > KanakBackup.MAX_BACKUP_BYTES) {
+            throw BackupException.LimitExceeded("Backup payload exceeds maximum byte size of 50MB")
+        }
+    }
 
     fun parseRoot(): Map<String, Any?> {
-        if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) {
-            throw IllegalArgumentException("Root must be a JSON object")
+        skipWhitespace()
+        if (index >= len || json[index] != '{') {
+            throw BackupException.CorruptedJson("Root must be a JSON object")
         }
-        return parseObject()
+        val root = parseObject()
+        skipWhitespace()
+        if (index < len) {
+            throw BackupException.CorruptedJson("Extra characters after JSON root object")
+        }
+        return root
     }
 
     private fun skipWhitespace() {
-        while (index < trimmed.length && trimmed[index].isWhitespace()) {
+        while (index < len && json[index].isWhitespace()) {
             index++
         }
     }
 
     private fun parseString(): String {
-        if (index >= trimmed.length || trimmed[index] != '"') {
-            throw IllegalArgumentException("Expected string at offset $index")
+        if (index >= len || json[index] != '"') {
+            throw BackupException.CorruptedJson("Expected double-quoted string at position $index")
         }
         index++
         val sb = StringBuilder()
-        while (index < trimmed.length) {
-            val c = trimmed[index++]
+        while (index < len) {
+            val c = json[index++]
             if (c == '"') return sb.toString()
-            if (c == '\\' && index < trimmed.length) {
-                when (val escaped = trimmed[index++]) {
+            if (c == '\\') {
+                if (index >= len) throw BackupException.CorruptedJson("Unterminated escape sequence in string")
+                when (val escaped = json[index++]) {
                     '"' -> sb.append('"')
                     '\\' -> sb.append('\\')
                     '/' -> sb.append('/')
@@ -208,114 +266,168 @@ private class SimpleJsonParser(json: String) {
                     'r' -> sb.append('\r')
                     't' -> sb.append('\t')
                     'u' -> {
-                        if (index + 4 <= trimmed.length) {
-                            val hex = trimmed.substring(index, index + 4)
+                        if (index + 4 <= len) {
+                            val hex = json.substring(index, index + 4)
                             index += 4
-                            sb.append(hex.toInt(16).toChar())
+                            try {
+                                sb.append(hex.toInt(16).toChar())
+                            } catch (_: Exception) {
+                                throw BackupException.CorruptedJson("Invalid unicode escape \\u$hex")
+                            }
+                        } else {
+                            throw BackupException.CorruptedJson("Truncated unicode escape sequence")
                         }
                     }
-                    else -> sb.append(escaped)
+                    else -> throw BackupException.CorruptedJson("Invalid escape character '\\$escaped'")
                 }
             } else {
                 sb.append(c)
             }
         }
-        throw IllegalArgumentException("Unterminated string")
+        throw BackupException.CorruptedJson("Unterminated string literal")
     }
 
     private fun parseObject(): Map<String, Any?> {
-        if (index >= trimmed.length || trimmed[index] != '{') {
-            throw IllegalArgumentException("Expected '{' at offset $index")
+        if (index >= len || json[index] != '{') {
+            throw BackupException.CorruptedJson("Expected '{' at position $index")
         }
         index++
         skipWhitespace()
         val map = LinkedHashMap<String, Any?>()
-        if (index < trimmed.length && trimmed[index] == '}') {
+        if (index < len && json[index] == '}') {
             index++
             return map
         }
-        while (index < trimmed.length) {
+
+        while (index < len) {
             skipWhitespace()
+            if (index >= len || json[index] != '"') {
+                throw BackupException.CorruptedJson("Expected string key in JSON object at position $index")
+            }
             val key = parseString()
+            if (map.containsKey(key)) {
+                throw BackupException.CorruptedJson("Duplicate JSON key detected: '$key'")
+            }
             skipWhitespace()
-            if (index >= trimmed.length || trimmed[index] != ':') {
-                throw IllegalArgumentException("Expected ':' after key '$key'")
+            if (index >= len || json[index] != ':') {
+                throw BackupException.CorruptedJson("Expected ':' after key '$key'")
             }
             index++
             skipWhitespace()
             val value = parseValue()
             map[key] = value
             skipWhitespace()
-            if (index < trimmed.length && trimmed[index] == ',') {
+            if (index < len && json[index] == ',') {
                 index++
                 skipWhitespace()
-            } else if (index < trimmed.length && trimmed[index] == '}') {
+                if (index < len && json[index] == '}') {
+                    throw BackupException.CorruptedJson("Trailing comma in object at position $index")
+                }
+            } else if (index < len && json[index] == '}') {
                 index++
                 return map
+            } else {
+                throw BackupException.CorruptedJson("Expected ',' or '}' in object at position $index")
             }
         }
-        throw IllegalArgumentException("Unterminated object")
+        throw BackupException.CorruptedJson("Unterminated object literal")
     }
 
     private fun parseArray(): List<Any?> {
-        if (index >= trimmed.length || trimmed[index] != '[') {
-            throw IllegalArgumentException("Expected '[' at offset $index")
+        if (index >= len || json[index] != '[') {
+            throw BackupException.CorruptedJson("Expected '[' at position $index")
         }
         index++
         skipWhitespace()
         val list = ArrayList<Any?>()
-        if (index < trimmed.length && trimmed[index] == ']') {
+        if (index < len && json[index] == ']') {
             index++
             return list
         }
-        while (index < trimmed.length) {
+
+        while (index < len) {
             skipWhitespace()
             val value = parseValue()
             list.add(value)
             skipWhitespace()
-            if (index < trimmed.length && trimmed[index] == ',') {
+            if (index < len && json[index] == ',') {
                 index++
                 skipWhitespace()
-            } else if (index < trimmed.length && trimmed[index] == ']') {
+                if (index < len && json[index] == ']') {
+                    throw BackupException.CorruptedJson("Trailing comma in array at position $index")
+                }
+            } else if (index < len && json[index] == ']') {
                 index++
                 return list
+            } else {
+                throw BackupException.CorruptedJson("Expected ',' or ']' in array at position $index")
             }
         }
-        throw IllegalArgumentException("Unterminated array")
+        throw BackupException.CorruptedJson("Unterminated array literal")
     }
 
     private fun parseValue(): Any? {
         skipWhitespace()
-        if (index >= trimmed.length) throw IllegalArgumentException("Unexpected end of input")
-        return when (val c = trimmed[index]) {
+        if (index >= len) throw BackupException.CorruptedJson("Unexpected end of JSON input")
+        return when (val c = json[index]) {
             '{' -> parseObject()
             '[' -> parseArray()
             '"' -> parseString()
             't', 'f' -> {
-                if (trimmed.startsWith("true", index)) {
+                if (json.startsWith("true", index)) {
                     index += 4
                     true
-                } else if (trimmed.startsWith("false", index)) {
+                } else if (json.startsWith("false", index)) {
                     index += 5
                     false
-                } else throw IllegalArgumentException("Invalid boolean at offset $index")
+                } else throw BackupException.CorruptedJson("Invalid boolean literal at position $index")
             }
             'n' -> {
-                if (trimmed.startsWith("null", index)) {
+                if (json.startsWith("null", index)) {
                     index += 4
                     null
-                } else throw IllegalArgumentException("Invalid null at offset $index")
+                } else throw BackupException.CorruptedJson("Invalid null literal at position $index")
             }
-            '-', in '0'..'9' -> {
-                val start = index
-                if (c == '-') index++
-                while (index < trimmed.length && (trimmed[index].isDigit() || trimmed[index] == '.' || trimmed[index] == 'e' || trimmed[index] == 'E' || trimmed[index] == '+' || trimmed[index] == '-')) {
+            '-', in '0'..'9' -> parseNumber()
+            else -> throw BackupException.CorruptedJson("Unexpected character '$c' at position $index")
+        }
+    }
+
+    private fun parseNumber(): Number {
+        val start = index
+        if (json[index] == '-') index++
+        var hasDecimal = false
+        var hasExponent = false
+
+        while (index < len) {
+            val c = json[index]
+            if (c.isDigit()) {
+                index++
+            } else if (c == '.') {
+                if (hasDecimal || hasExponent) throw BackupException.CorruptedJson("Malformed number at position $index")
+                hasDecimal = true
+                index++
+            } else if (c == 'e' || c == 'E') {
+                if (hasExponent) throw BackupException.CorruptedJson("Malformed number at position $index")
+                hasExponent = true
+                index++
+                if (index < len && (json[index] == '+' || json[index] == '-')) {
                     index++
                 }
-                val numStr = trimmed.substring(start, index)
-                numStr.toLongOrNull() ?: numStr.toDoubleOrNull() ?: throw IllegalArgumentException("Invalid number $numStr")
+            } else {
+                break
             }
-            else -> throw IllegalArgumentException("Unexpected character '$c' at offset $index")
+        }
+
+        val numStr = json.substring(start, index)
+        if (hasDecimal || hasExponent) {
+            return numStr.toDoubleOrNull() ?: throw BackupException.CorruptedJson("Invalid double value: $numStr")
+        }
+
+        return try {
+            numStr.toLong()
+        } catch (_: NumberFormatException) {
+            throw BackupException.CorruptedJson("Integer overflow in number: $numStr")
         }
     }
 }

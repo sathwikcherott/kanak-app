@@ -8,16 +8,19 @@ import com.kanak.app.model.ExpenseCategory
 
 sealed class BackupException(message: String) : Exception(message) {
     class CorruptedJson(message: String) : BackupException(message)
+    class InvalidFormat(message: String) : BackupException(message)
     class UnsupportedSchemaVersion(val version: Int) : BackupException("Unsupported backup schema version: $version")
     class DuplicateExpenseIds(message: String) : BackupException(message)
     class InvalidMonetaryValue(message: String) : BackupException(message)
     class MissingRequiredField(message: String) : BackupException(message)
+    class UnknownEnum(message: String) : BackupException(message)
+    class LimitExceeded(message: String) : BackupException(message)
     class FileReadError(message: String) : BackupException(message)
 }
 
 data class BackupPreferences(
     val defaultCurrency: String = "INR",
-    val themePreference: ThemePreference = ThemePreference.DARK
+    val themePreference: ThemePreference = ThemePreference.DARK,
 )
 
 data class BackupExpense(
@@ -56,6 +59,7 @@ data class BackupExpense(
 }
 
 data class KanakBackup(
+    val format: String = FORMAT_IDENTIFIER,
     val version: Int = CURRENT_BACKUP_VERSION,
     val exportedAt: Long = System.currentTimeMillis(),
     val appVersion: String = "1.0",
@@ -63,7 +67,10 @@ data class KanakBackup(
     val expenses: List<BackupExpense> = emptyList()
 ) {
     companion object {
+        const val FORMAT_IDENTIFIER = "kanak_backup"
         const val CURRENT_BACKUP_VERSION = 1
+        const val MAX_BACKUP_BYTES = 50 * 1024 * 1024L // 50 MB
+        const val MAX_EXPENSE_RECORDS = 50_000
     }
 }
 

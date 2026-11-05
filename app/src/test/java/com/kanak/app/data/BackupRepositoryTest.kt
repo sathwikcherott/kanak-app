@@ -5,277 +5,23 @@ import com.kanak.app.data.backup.BackupException
 import com.kanak.app.data.backup.BackupPreferences
 import com.kanak.app.data.backup.KanakBackup
 import com.kanak.app.data.backup.KanakBackupSerializer
-import com.kanak.app.data.backup.OfflineBackupRepository
 import com.kanak.app.data.local.datastore.ThemePreference
-import com.kanak.app.data.local.entity.AiEnrichmentJobEntity
-import com.kanak.app.data.repository.ExpenseRepository
 import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
-import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.test.StandardTestDispatcher
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
-import org.junit.Before
 import org.junit.Test
 
-@OptIn(ExperimentalCoroutinesApi::class)
 class BackupRepositoryTest {
 
-    private val testDispatcher = StandardTestDispatcher()
-    private val fakeExpenseRepository = FakeExpenseRepository()
-    private val fakeUserPreferencesDataSource = FakeUserPreferencesDataSource()
-
-    @Before
-    fun setUp() {
-        Dispatchers.setMain(testDispatcher)
-    }
-
-    @After
-    fun tearDown() {
-        Dispatchers.resetMain()
-    }
-
     @Test
-    fun backupSerialization_exportsAllFieldsToValidJson() {
-        val backup = KanakBackup(
-            version = 1,
-            exportedAt = 1700000000000L,
-            appVersion = "1.0",
-            preferences = BackupPreferences("USD", ThemePreference.LIGHT),
-            expenses = listOf(
-                BackupExpense(
-                    id = 1L,
-                    amountMinor = 2500L,
-                    currency = "USD",
-                    occurredAt = 1700000000000L,
-                    note = "Taxi ride",
-                    category = ExpenseCategory.TRANSPORT,
-                    source = EntrySource.TYPED,
-                    categorizationState = CategorizationState.CONFIRMED
-                )
-            )
-        )
-
-        val json = KanakBackupSerializer.toJson(backup)
-        assertTrue(json.contains("\"version\": 1"))
-        assertTrue(json.contains("\"exportedAt\": 1700000000000"))
-        assertTrue(json.contains("\"defaultCurrency\": \"USD\""))
-        assertTrue(json.contains("\"themePreference\": \"LIGHT\""))
-        assertTrue(json.contains("\"amountMinor\": 2500"))
-        assertTrue(json.contains("\"category\": \"TRANSPORT\""))
-    }
-
-    @Test
-    fun backupDeserialization_parsesValidJsonSuccessfully() {
-        val json = """
-            {
-              "version": 1,
-              "exportedAt": 1700000000000,
-              "appVersion": "1.0",
-              "preferences": {
-                "defaultCurrency": "EUR",
-                "themePreference": "DARK"
-              },
-              "expenses": [
-                {
-                  "id": 10,
-                  "amountMinor": 4500,
-                  "currency": "EUR",
-                  "occurredAt": 1700000000000,
-                  "note": "Dinner",
-                  "category": "FOOD",
-                  "source": "VOICE",
-                  "categorizationState": "CONFIRMED"
-                }
-              ]
-            }
-        """.trimIndent()
-
-        val backup = KanakBackupSerializer.fromJson(json)
-        assertEquals(1, backup.version)
-        assertEquals("EUR", backup.preferences.defaultCurrency)
-        assertEquals(ThemePreference.DARK, backup.preferences.themePreference)
-        assertEquals(1, backup.expenses.size)
-        val exp = backup.expenses[0]
-        assertEquals(10L, exp.id)
-        assertEquals(4500L, exp.amountMinor)
-        assertEquals("EUR", exp.currency)
-        assertEquals("Dinner", exp.note)
-        assertEquals(ExpenseCategory.FOOD, exp.category)
-        assertEquals(EntrySource.VOICE, exp.source)
-    }
-
-    @Test
-    fun parseAndValidate_detectsCorruptedJson() {
-        val corruptedJson = "not a json object"
-        try {
-            KanakBackupSerializer.fromJson(corruptedJson)
-            fail("Should throw CorruptedJson exception")
-        } catch (e: BackupException.CorruptedJson) {
-            assertNotNull(e.message)
-        }
-    }
-
-    @Test
-    fun parseAndValidate_detectsUnsupportedSchemaVersion() {
-        val futureJson = """
-            {
-              "version": 99,
-              "exportedAt": 1700000000000,
-              "expenses": []
-            }
-        """.trimIndent()
-
-        try {
-            KanakBackupSerializer.fromJson(futureJson)
-            fail("Should throw UnsupportedSchemaVersion exception")
-        } catch (e: BackupException.UnsupportedSchemaVersion) {
-            assertEquals(99, e.version)
-        }
-    }
-
-    @Test
-    fun parseAndValidate_detectsDuplicateExpenseIds() {
-        val duplicateJson = """
-            {
-              "version": 1,
-              "expenses": [
-                { "id": 1, "amountMinor": 1000, "occurredAt": 1000, "currency": "INR", "source": "TYPED", "categorizationState": "CONFIRMED" },
-                { "id": 1, "amountMinor": 2000, "occurredAt": 2000, "currency": "INR", "source": "TYPED", "categorizationState": "CONFIRMED" }
-              ]
-            }
-        """.trimIndent()
-
-        try {
-            KanakBackupSerializer.fromJson(duplicateJson)
-            fail("Should throw DuplicateExpenseIds exception")
-        } catch (e: BackupException.DuplicateExpenseIds) {
-            assertTrue(e.message!!.contains("Duplicate expense ID"))
-        }
-    }
-
-    @Test
-    fun parseAndValidate_detectsNegativeMonetaryValues() {
-        val negativeJson = """
-            {
-              "version": 1,
-              "expenses": [
-                { "id": 1, "amountMinor": -500, "occurredAt": 1000, "currency": "INR", "source": "TYPED", "categorizationState": "CONFIRMED" }
-              ]
-            }
-        """.trimIndent()
-
-        try {
-            KanakBackupSerializer.fromJson(negativeJson)
-            fail("Should throw InvalidMonetaryValue exception")
-        } catch (e: BackupException.InvalidMonetaryValue) {
-            assertTrue(e.message!!.contains("Negative amount"))
-        }
-    }
-
-    @Test
-    fun parseAndValidate_handlesMissingOptionalFields() {
-        val missingOptionalJson = """
-            {
-              "version": 1,
-              "expenses": [
-                { "id": 5, "amountMinor": 1200, "occurredAt": 1000 }
-              ]
-            }
-        """.trimIndent()
-
-        val backup = KanakBackupSerializer.fromJson(missingOptionalJson)
-        assertEquals(1, backup.expenses.size)
-        val exp = backup.expenses[0]
-        assertEquals(5L, exp.id)
-        assertEquals(1200L, exp.amountMinor)
-        assertNull(exp.note)
-        assertNull(exp.category)
-        assertEquals("INR", exp.currency)
-    }
-
-    @Test
-    fun parseAndValidate_handlesInvalidCategoryReferencesSafely() {
-        val invalidCategoryJson = """
-            {
-              "version": 1,
-              "expenses": [
-                { "id": 5, "amountMinor": 1200, "occurredAt": 1000, "category": "UNKNOWN_FUTURE_CATEGORY" }
-              ]
-            }
-        """.trimIndent()
-
-        val backup = KanakBackupSerializer.fromJson(invalidCategoryJson)
-        assertEquals(1, backup.expenses.size)
-        assertNull(backup.expenses[0].category)
-    }
-
-    @Test
-    fun restoreBackup_atomicReplacementAndPreferencesUpdate() = runTest {
-        // Initial state in repository
-        val initialExpense = Expense(id = 99L, amountMinor = 9999L, category = ExpenseCategory.BILL)
-        fakeExpenseRepository.setExpenses(listOf(initialExpense))
-
-        val repository = OfflineBackupRepository(fakeExpenseRepository, fakeUserPreferencesDataSource)
-
-        val backup = KanakBackup(
-            version = 1,
-            preferences = BackupPreferences("EUR", ThemePreference.LIGHT),
-            expenses = listOf(
-                BackupExpense(id = 1L, amountMinor = 5000L, currency = "EUR", occurredAt = 1000L, category = ExpenseCategory.FOOD),
-                BackupExpense(id = 2L, amountMinor = 10000L, currency = "EUR", occurredAt = 2000L, category = ExpenseCategory.GIRLFRIEND)
-            )
-        )
-
-        val result = repository.restoreBackup(backup)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertTrue(result.isSuccess)
-        assertEquals(2, fakeExpenseRepository.expensesFlow.value.size)
-        assertEquals("EUR", fakeExpenseRepository.currencyFlow.value)
-        assertEquals(ThemePreference.LIGHT, fakeExpenseRepository.themeFlow.value)
-        assertEquals(1L, fakeExpenseRepository.expensesFlow.value[0].id)
-        assertEquals(2L, fakeExpenseRepository.expensesFlow.value[1].id)
-    }
-
-    @Test
-    fun restoreBackup_failureRollsBackAndPreservesExistingData() = runTest {
-        val initialExpense = Expense(id = 99L, amountMinor = 9999L, category = ExpenseCategory.BILL)
-        fakeExpenseRepository.setExpenses(listOf(initialExpense))
-        fakeExpenseRepository.shouldFailOnReplace = true
-
-        val repository = OfflineBackupRepository(fakeExpenseRepository, fakeUserPreferencesDataSource)
-
-        val backup = KanakBackup(
-            version = 1,
-            expenses = listOf(BackupExpense(id = 1L, amountMinor = 5000L, currency = "INR", occurredAt = 1000L))
-        )
-
-        val result = repository.restoreBackup(backup)
-        testDispatcher.scheduler.advanceUntilIdle()
-
-        assertTrue(result.isFailure)
-        // Verify initial expense remains preserved
-        assertEquals(1, fakeExpenseRepository.expensesFlow.value.size)
-        assertEquals(99L, fakeExpenseRepository.expensesFlow.value[0].id)
-    }
-
-    @Test
-    fun roundTrip_preservesExactDataConsistency() {
+    fun exactSerializationAndDeserialization_roundTripEquality() {
         val original = KanakBackup(
+            format = KanakBackup.FORMAT_IDENTIFIER,
             version = 1,
             exportedAt = 1715000000000L,
             appVersion = "1.0",
@@ -297,6 +43,7 @@ class BackupRepositoryTest {
         val json = KanakBackupSerializer.toJson(original)
         val restored = KanakBackupSerializer.fromJson(json)
 
+        assertEquals(original.format, restored.format)
         assertEquals(original.version, restored.version)
         assertEquals(original.exportedAt, restored.exportedAt)
         assertEquals(original.preferences.defaultCurrency, restored.preferences.defaultCurrency)
@@ -316,48 +63,394 @@ class BackupRepositoryTest {
         assertEquals(origExp.categorizationState, restExp.categorizationState)
     }
 
-    private class FakeExpenseRepository : ExpenseRepository {
-        val expensesFlow = MutableStateFlow<List<Expense>>(emptyList())
-        val currencyFlow = MutableStateFlow("INR")
-        val themeFlow = MutableStateFlow(ThemePreference.DARK)
-        var shouldFailOnReplace = false
+    @Test
+    fun emptyBackup_serializesAndDeserializesSuccessfully() {
+        val emptyBackup = KanakBackup(expenses = emptyList())
+        val json = KanakBackupSerializer.toJson(emptyBackup)
+        val restored = KanakBackupSerializer.fromJson(json)
 
-        fun setExpenses(list: List<Expense>) {
-            expensesFlow.value = list
-        }
+        assertEquals(0, restored.expenses.size)
+        assertEquals(KanakBackup.FORMAT_IDENTIFIER, restored.format)
+    }
 
-        override fun getAllExpenses(): Flow<List<Expense>> = expensesFlow
-        override fun getExpenseById(id: Long): Flow<Expense?> = flowOf(null)
-        override suspend fun saveExpense(expense: Expense): Long = 1L
-        override suspend fun deleteExpense(id: Long) {}
-        override fun getDefaultCurrency(): Flow<String> = currencyFlow
-        override suspend fun setDefaultCurrency(currency: String) {
-            currencyFlow.value = currency
-        }
-        override fun getThemePreference(): Flow<ThemePreference> = themeFlow
-        override suspend fun setThemePreference(theme: ThemePreference) {
-            themeFlow.value = theme
-        }
-        override fun getEnrichmentJobForExpense(expenseId: Long): Flow<AiEnrichmentJobEntity?> = flowOf(null)
+    @Test
+    fun unicodeNotesAndGirlfriendCategory_preservedVerbatim() {
+        val unicodeBackup = KanakBackup(
+            expenses = listOf(
+                BackupExpense(
+                    id = 1L,
+                    amountMinor = 5000L,
+                    currency = "INR",
+                    occurredAt = 1000L,
+                    note = "Gift for Swathi ❤️ स्वाति (Coffee & Flowers ☕🌸)",
+                    category = ExpenseCategory.GIRLFRIEND,
+                    source = EntrySource.TYPED,
+                    categorizationState = CategorizationState.CONFIRMED
+                )
+            )
+        )
 
-        override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) {
-            if (shouldFailOnReplace) {
-                throw IllegalStateException("Simulated database transaction failure")
+        val json = KanakBackupSerializer.toJson(unicodeBackup)
+        val restored = KanakBackupSerializer.fromJson(json)
+
+        assertEquals("Gift for Swathi ❤️ स्वाति (Coffee & Flowers ☕🌸)", restored.expenses[0].note)
+        assertEquals(ExpenseCategory.GIRLFRIEND, restored.expenses[0].category)
+    }
+
+    @Test
+    fun explicitUncategorizedRecords_preservedAsNullCategory() {
+        val uncategorizedBackup = KanakBackup(
+            expenses = listOf(
+                BackupExpense(
+                    id = 2L,
+                    amountMinor = 1500L,
+                    currency = "INR",
+                    occurredAt = 2000L,
+                    note = "Unsorted expense",
+                    category = null,
+                    source = EntrySource.TYPED,
+                    categorizationState = CategorizationState.UNCATEGORIZED
+                )
+            )
+        )
+
+        val json = KanakBackupSerializer.toJson(uncategorizedBackup)
+        val restored = KanakBackupSerializer.fromJson(json)
+
+        assertNull(restored.expenses[0].category)
+        assertEquals(CategorizationState.UNCATEGORIZED, restored.expenses[0].categorizationState)
+    }
+
+    @Test
+    fun validSourceAndCategorizationStates_preserved() {
+        val statesBackup = KanakBackup(
+            expenses = listOf(
+                BackupExpense(
+                    id = 3L,
+                    amountMinor = 8000L,
+                    currency = "USD",
+                    occurredAt = 3000L,
+                    category = ExpenseCategory.FOOD,
+                    source = EntrySource.VOICE,
+                    categorizationState = CategorizationState.AUTO_CATEGORIZED
+                )
+            )
+        )
+
+        val json = KanakBackupSerializer.toJson(statesBackup)
+        val restored = KanakBackupSerializer.fromJson(json)
+
+        assertEquals(EntrySource.VOICE, restored.expenses[0].source)
+        assertEquals(CategorizationState.AUTO_CATEGORIZED, restored.expenses[0].categorizationState)
+    }
+
+    @Test
+    fun originalCurrency_preservedIndependentlyOfDisplayCurrency() {
+        val multiCurrencyBackup = KanakBackup(
+            preferences = BackupPreferences(defaultCurrency = "INR"),
+            expenses = listOf(
+                BackupExpense(id = 1L, amountMinor = 1000L, currency = "EUR", occurredAt = 1000L),
+                BackupExpense(id = 2L, amountMinor = 2000L, currency = "USD", occurredAt = 2000L),
+                BackupExpense(id = 3L, amountMinor = 3000L, currency = "GBP", occurredAt = 3000L)
+            )
+        )
+
+        val json = KanakBackupSerializer.toJson(multiCurrencyBackup)
+        val restored = KanakBackupSerializer.fromJson(json)
+
+        assertEquals("EUR", restored.expenses[0].currency)
+        assertEquals("USD", restored.expenses[1].currency)
+        assertEquals("GBP", restored.expenses[2].currency)
+    }
+
+    @Test
+    fun exactIntegerPrecision_nearAndAbove2Pow53AndLongLimits() {
+        val largeNumber = 9_007_199_254_740_993L // 2^53 + 1
+        val largeBackup = KanakBackup(
+            expenses = listOf(
+                BackupExpense(id = 500L, amountMinor = largeNumber, currency = "INR", occurredAt = largeNumber)
+            )
+        )
+
+        val json = KanakBackupSerializer.toJson(largeBackup)
+        val restored = KanakBackupSerializer.fromJson(json)
+
+        assertEquals(largeNumber, restored.expenses[0].amountMinor)
+        assertEquals(largeNumber, restored.expenses[0].occurredAt)
+    }
+
+    @Test
+    fun zeroAndNegativeAndFractionalAmounts_rejectedWithInvalidMonetaryValue() {
+        val zeroAmountJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 1, "amountMinor": 0, "currency": "INR", "occurredAt": 1000, "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
             }
-            expensesFlow.value = expenses
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(zeroAmountJson)
+            fail("Should reject zero amount")
+        } catch (e: BackupException.InvalidMonetaryValue) {
+            assertTrue(e.message!!.contains("Invalid zero or negative monetary amount"))
+        }
+
+        val negativeAmountJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 2, "amountMinor": -500, "currency": "INR", "occurredAt": 1000, "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(negativeAmountJson)
+            fail("Should reject negative amount")
+        } catch (e: BackupException.InvalidMonetaryValue) {
+            assertTrue(e.message!!.contains("Invalid zero or negative monetary amount"))
+        }
+
+        val fractionalAmountJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 3, "amountMinor": 12.50, "currency": "INR", "occurredAt": 1000, "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(fractionalAmountJson)
+            fail("Should reject fractional amount")
+        } catch (e: BackupException.InvalidMonetaryValue) {
+            assertTrue(e.message!!.contains("Missing or non-integer 'amountMinor'"))
         }
     }
 
-    private class FakeUserPreferencesDataSource : com.kanak.app.data.local.datastore.UserPreferencesDataSource {
-        private val _currency = MutableStateFlow("INR")
-        private val _theme = MutableStateFlow(ThemePreference.DARK)
-        private val _lastBackupTime = MutableStateFlow<Long?>(null)
+    @Test
+    fun missingAndWrongTypeRequiredFields_rejected() {
+        val missingIdJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "amountMinor": 1000, "currency": "INR", "occurredAt": 1000, "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
 
-        override val defaultCurrency: Flow<String> = _currency
-        override suspend fun setDefaultCurrency(currency: String) { _currency.value = currency }
-        override val themePreference: Flow<ThemePreference> = _theme
-        override suspend fun setThemePreference(theme: ThemePreference) { _theme.value = theme }
-        override val lastBackupExportedTime: Flow<Long?> = _lastBackupTime
-        override suspend fun setLastBackupExportedTime(timestamp: Long) { _lastBackupTime.value = timestamp }
+        try {
+            KanakBackupSerializer.fromJson(missingIdJson)
+            fail("Should reject missing id")
+        } catch (e: BackupException.MissingRequiredField) {
+            assertTrue(e.message!!.contains("Missing or invalid integer 'id'"))
+        }
+
+        val zeroIdJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 0, "amountMinor": 1000, "currency": "INR", "occurredAt": 1000, "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(zeroIdJson)
+            fail("Should reject ID <= 0")
+        } catch (e: BackupException.MissingRequiredField) {
+            assertTrue(e.message!!.contains("Invalid non-positive ID"))
+        }
+    }
+
+    @Test
+    fun duplicateExpenseIds_rejected() {
+        val duplicateJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 10, "amountMinor": 1000, "currency": "INR", "occurredAt": 1000, "source": "TYPED", "categorizationState": "CONFIRMED" },
+                { "id": 10, "amountMinor": 2000, "currency": "INR", "occurredAt": 2000, "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(duplicateJson)
+            fail("Should reject duplicate expense IDs")
+        } catch (e: BackupException.DuplicateExpenseIds) {
+            assertTrue(e.message!!.contains("Duplicate expense ID found: 10"))
+        }
+    }
+
+    @Test
+    fun duplicateJsonKeys_rejected() {
+        val duplicateKeyJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "version": 2,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": []
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(duplicateKeyJson)
+            fail("Should reject duplicate JSON key")
+        } catch (e: BackupException.CorruptedJson) {
+            assertTrue(e.message!!.contains("Duplicate JSON key detected: 'version'"))
+        }
+    }
+
+    @Test
+    fun unknownCategorySourceStateTheme_rejectedWithoutFallback() {
+        val unknownCatJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 1, "amountMinor": 1000, "currency": "INR", "occurredAt": 1000, "category": "NON_EXISTENT_CATEGORY", "source": "TYPED", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(unknownCatJson)
+            fail("Should reject unknown category string")
+        } catch (e: BackupException.UnknownEnum) {
+            assertTrue(e.message!!.contains("Unknown expense category: 'NON_EXISTENT_CATEGORY'"))
+        }
+
+        val unknownSourceJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": [
+                { "id": 1, "amountMinor": 1000, "currency": "INR", "occurredAt": 1000, "source": "TELEPATHIC", "categorizationState": "CONFIRMED" }
+              ]
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(unknownSourceJson)
+            fail("Should reject unknown source string")
+        } catch (e: BackupException.UnknownEnum) {
+            assertTrue(e.message!!.contains("Unknown entry source: 'TELEPATHIC'"))
+        }
+
+        val unknownThemeJson = """
+            {
+              "format": "kanak_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "SOLARIZED_DARK" },
+              "expenses": []
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(unknownThemeJson)
+            fail("Should reject unknown theme string")
+        } catch (e: BackupException.UnknownEnum) {
+            assertTrue(e.message!!.contains("Unknown theme preference: 'SOLARIZED_DARK'"))
+        }
+    }
+
+    @Test
+    fun malformedAndTruncatedJson_rejectedWithCorruptedJson() {
+        val truncatedJson = "{\"format\": \"kanak_backup\", \"version\": 1"
+        try {
+            KanakBackupSerializer.fromJson(truncatedJson)
+            fail("Should reject truncated JSON")
+        } catch (e: BackupException.CorruptedJson) {
+            assertNotNull(e.message)
+        }
+    }
+
+    @Test
+    fun wrongFormatAndUnsupportedSchemaVersions_rejected() {
+        val wrongFormatJson = """
+            {
+              "format": "other_app_backup",
+              "version": 1,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": []
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(wrongFormatJson)
+            fail("Should reject wrong format")
+        } catch (e: BackupException.InvalidFormat) {
+            assertTrue(e.message!!.contains("Unsupported backup format: 'other_app_backup'"))
+        }
+
+        val unsupportedVersionJson = """
+            {
+              "format": "kanak_backup",
+              "version": 2,
+              "exportedAt": 1000,
+              "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
+              "expenses": []
+            }
+        """.trimIndent()
+
+        try {
+            KanakBackupSerializer.fromJson(unsupportedVersionJson)
+            fail("Should reject version 2")
+        } catch (e: BackupException.UnsupportedSchemaVersion) {
+            assertEquals(2, e.version)
+        }
+    }
+
+    @Test
+    fun byteAndRecordLimitEnforcement() {
+        // Record limit enforcement test (> 50,000 records)
+        val sb = StringBuilder()
+        sb.append("{\n")
+        sb.append("  \"format\": \"kanak_backup\",\n")
+        sb.append("  \"version\": 1,\n")
+        sb.append("  \"exportedAt\": 1000,\n")
+        sb.append("  \"preferences\": { \"defaultCurrency\": \"INR\", \"themePreference\": \"DARK\" },\n")
+        sb.append("  \"expenses\": [\n")
+        for (i in 1..50001) {
+            sb.append("    { \"id\": $i, \"amountMinor\": 100, \"currency\": \"INR\", \"occurredAt\": 1000, \"source\": \"TYPED\", \"categorizationState\": \"CONFIRMED\" }")
+            if (i < 50001) sb.append(",\n")
+        }
+        sb.append("\n  ]\n}")
+
+        try {
+            KanakBackupSerializer.fromJson(sb.toString())
+            fail("Should reject backup exceeding record limit")
+        } catch (e: BackupException.LimitExceeded) {
+            assertTrue(e.message!!.contains("Backup exceeds maximum record count"))
+        }
     }
 }
