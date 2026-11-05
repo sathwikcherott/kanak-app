@@ -36,9 +36,12 @@ fun QuickEntrySheet(homeViewModel: HomeViewModel, entryViewModel: QuickEntryView
     // Read the latest value in the transition callback without recreating sheet state
     // as saving starts/stops or as input changes.
     val isSaving by rememberUpdatedState(entryState.isSaving)
+    val confirmSheetChange = remember {
+        { target: SheetValue -> target != SheetValue.Hidden || !isSaving }
+    }
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
-        confirmValueChange = { it != SheetValue.Hidden || !isSaving }
+        confirmValueChange = confirmSheetChange
     )
     var startVoice by remember { mutableStateOf(false) }
     LaunchedEffect(sheetState, request.second) {
