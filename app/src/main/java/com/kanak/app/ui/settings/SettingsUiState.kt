@@ -13,5 +13,8 @@ data class SettingsUiState(
     val isExportingBackup: Boolean = false,
     val isRestoringBackup: Boolean = false,
     val backupError: String? = null,
+    val restoreWarning: String? = null,
     val userMessage: String? = null
-)
+) {
+    val backupBusy: Boolean get() = isExportingBackup || isRestoringBackup
+}
