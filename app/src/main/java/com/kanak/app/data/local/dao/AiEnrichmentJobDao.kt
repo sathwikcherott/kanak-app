@@ -27,6 +27,9 @@ interface AiEnrichmentJobDao {
     @Query("DELETE FROM ai_enrichment_jobs WHERE expense_id = :expenseId AND status IN ('PENDING', 'IN_PROGRESS')")
     fun cancelPendingJobsForExpense(expenseId: Long): Int
 
+    @Query("DELETE FROM ai_enrichment_jobs")
+    fun deleteAllJobs()
+
     @Transaction
     fun enqueueJobForExpense(expenseId: Long): Long {
         cancelPendingJobsForExpense(expenseId)

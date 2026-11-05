@@ -229,6 +229,12 @@ class AiSavePathTest {
         override fun deleteExpenseById(id: Long) {
             expenses.value = expenses.value.filter { it.id != id }
         }
+        override fun deleteAllExpenses() {
+            expenses.value = emptyList()
+        }
+        override fun insertExpenses(expenses: List<ExpenseEntity>) {
+            this.expenses.value = expenses
+        }
     }
 
     private class FakeAiEnrichmentJobDao : AiEnrichmentJobDao {
@@ -245,6 +251,10 @@ class AiSavePathTest {
             val countBefore = jobs.value.size
             jobs.value = jobs.value.filterNot { it.expenseId == expenseId && (it.status == EnrichmentJobStatus.PENDING.name || it.status == EnrichmentJobStatus.IN_PROGRESS.name) }
             return countBefore - jobs.value.size
+        }
+
+        override fun deleteAllJobs() {
+            jobs.value = emptyList()
         }
 
         override fun enqueueJobForExpense(expenseId: Long): Long {
@@ -334,6 +344,12 @@ class AiSavePathTest {
         override val themePreference: Flow<com.kanak.app.data.local.datastore.ThemePreference> = _theme
         override suspend fun setThemePreference(theme: com.kanak.app.data.local.datastore.ThemePreference) {
             _theme.value = theme
+        }
+
+        private val _lastBackup = MutableStateFlow<Long?>(null)
+        override val lastBackupExportedTime: Flow<Long?> = _lastBackup
+        override suspend fun setLastBackupExportedTime(timestamp: Long) {
+            _lastBackup.value = timestamp
         }
     }
 }

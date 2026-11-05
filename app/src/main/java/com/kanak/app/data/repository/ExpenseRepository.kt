@@ -15,4 +15,5 @@ interface ExpenseRepository {
     fun getThemePreference(): Flow<ThemePreference>
     suspend fun setThemePreference(theme: ThemePreference)
     fun getEnrichmentJobForExpense(expenseId: Long): Flow<AiEnrichmentJobEntity?>
+    suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>)
 }

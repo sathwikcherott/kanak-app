@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -11,9 +12,10 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "kanak_user_preferences")
 
-enum class ThemePreference {
-    DARK,
-    LIGHT
+enum class ThemePreference(val displayName: String) {
+    SYSTEM("System Default"),
+    DARK("Dark (AMOLED)"),
+    LIGHT("Light")
 }
 
 interface UserPreferencesDataSource {
@@ -21,6 +23,8 @@ interface UserPreferencesDataSource {
     suspend fun setDefaultCurrency(currency: String)
     val themePreference: Flow<ThemePreference>
     suspend fun setThemePreference(theme: ThemePreference)
+    val lastBackupExportedTime: Flow<Long?>
+    suspend fun setLastBackupExportedTime(timestamp: Long)
 }
 
 class UserPreferencesRepository(private val context: Context) : UserPreferencesDataSource {
@@ -28,6 +32,7 @@ class UserPreferencesRepository(private val context: Context) : UserPreferencesD
     private object PreferenceKeys {
         val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
         val THEME_PREFERENCE = stringPreferencesKey("theme_preference")
+        val LAST_BACKUP_EXPORTED_TIME = longPreferencesKey("last_backup_exported_time")
     }
 
     override val defaultCurrency: Flow<String> = context.dataStore.data.map { preferences ->
@@ -52,6 +57,16 @@ class UserPreferencesRepository(private val context: Context) : UserPreferencesD
     override suspend fun setThemePreference(theme: ThemePreference) {
         context.dataStore.edit { preferences ->
             preferences[PreferenceKeys.THEME_PREFERENCE] = theme.name
+        }
+    }
+
+    override val lastBackupExportedTime: Flow<Long?> = context.dataStore.data.map { preferences ->
+        preferences[PreferenceKeys.LAST_BACKUP_EXPORTED_TIME]
+    }
+
+    override suspend fun setLastBackupExportedTime(timestamp: Long) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.LAST_BACKUP_EXPORTED_TIME] = timestamp
         }
     }
 }

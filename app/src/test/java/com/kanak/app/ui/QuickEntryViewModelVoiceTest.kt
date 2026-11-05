@@ -189,5 +189,8 @@ class QuickEntryViewModelVoiceTest {
             themeFlow.value = theme
         }
         override fun getEnrichmentJobForExpense(expenseId: Long): Flow<com.kanak.app.data.local.entity.AiEnrichmentJobEntity?> = flowOf(null)
+        override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) {
+            expensesFlow.value = expenses
+        }
     }
 }

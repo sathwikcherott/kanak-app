@@ -93,11 +93,18 @@ class OfflineExpenseRepositoryTest {
         override fun deleteExpenseById(id: Long) {
             expenses.value = expenses.value.filter { it.id != id }
         }
+        override fun deleteAllExpenses() {
+            expenses.value = emptyList()
+        }
+        override fun insertExpenses(expenses: List<ExpenseEntity>) {
+            this.expenses.value = expenses
+        }
     }
 
     private class FakeUserPreferencesDataSource : UserPreferencesDataSource {
         private val _currency = MutableStateFlow("INR")
         private val _theme = MutableStateFlow(com.kanak.app.data.local.datastore.ThemePreference.DARK)
+        private val _lastBackup = MutableStateFlow<Long?>(null)
 
         override val defaultCurrency: Flow<String> = _currency
 
@@ -109,6 +116,12 @@ class OfflineExpenseRepositoryTest {
 
         override suspend fun setThemePreference(theme: com.kanak.app.data.local.datastore.ThemePreference) {
             _theme.value = theme
+        }
+
+        override val lastBackupExportedTime: Flow<Long?> = _lastBackup
+
+        override suspend fun setLastBackupExportedTime(timestamp: Long) {
+            _lastBackup.value = timestamp
         }
     }
 }

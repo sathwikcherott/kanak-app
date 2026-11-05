@@ -19,10 +19,13 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
+import com.kanak.app.data.local.KanakDatabase
+
 class OfflineExpenseRepository(
     private val expenseDao: ExpenseDao,
     private val userPreferencesDataSource: UserPreferencesDataSource,
-    private val aiEnrichmentJobDao: AiEnrichmentJobDao? = null
+    private val aiEnrichmentJobDao: AiEnrichmentJobDao? = null,
+    private val database: KanakDatabase? = null
 ) : ExpenseRepository {
 
     override fun getAllExpenses(): Flow<List<Expense>> {
@@ -69,6 +72,22 @@ class OfflineExpenseRepository(
 
     override fun getEnrichmentJobForExpense(expenseId: Long): Flow<AiEnrichmentJobEntity?> {
         return aiEnrichmentJobDao?.getJobForExpense(expenseId) ?: flowOf(null)
+    }
+
+    override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) = withContext(Dispatchers.IO) {
+        val entities = expenses.map { it.toEntity() }
+        val db = database
+        if (db != null) {
+            db.runInTransaction {
+                expenseDao.deleteAllExpenses()
+                aiEnrichmentJobDao?.deleteAllJobs()
+                expenseDao.insertExpenses(entities)
+            }
+        } else {
+            expenseDao.deleteAllExpenses()
+            aiEnrichmentJobDao?.deleteAllJobs()
+            expenseDao.insertExpenses(entities)
+        }
     }
 
     /**

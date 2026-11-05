@@ -37,4 +37,10 @@ interface ExpenseDao {
 
     @Query("DELETE FROM expenses WHERE id = :id")
     fun deleteExpenseById(id: Long)
+
+    @Query("DELETE FROM expenses")
+    fun deleteAllExpenses()
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertExpenses(expenses: List<ExpenseEntity>)
 }

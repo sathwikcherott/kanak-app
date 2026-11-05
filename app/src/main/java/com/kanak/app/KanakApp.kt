@@ -1,6 +1,8 @@
 package com.kanak.app
 
 import android.app.Application
+import com.kanak.app.data.backup.BackupRepository
+import com.kanak.app.data.backup.OfflineBackupRepository
 import com.kanak.app.data.local.KanakDatabase
 import com.kanak.app.data.local.datastore.UserPreferencesRepository
 import com.kanak.app.data.repository.ExpenseRepository
@@ -16,7 +18,14 @@ class KanakApp : Application() {
         OfflineExpenseRepository(
             expenseDao = database.expenseDao(),
             userPreferencesDataSource = userPreferencesRepository,
-            aiEnrichmentJobDao = database.aiEnrichmentJobDao()
+            aiEnrichmentJobDao = database.aiEnrichmentJobDao(),
+            database = database
+        )
+    }
+    val backupRepository: BackupRepository by lazy {
+        OfflineBackupRepository(
+            expenseRepository = expenseRepository,
+            userPreferencesDataSource = userPreferencesRepository
         )
     }
 }

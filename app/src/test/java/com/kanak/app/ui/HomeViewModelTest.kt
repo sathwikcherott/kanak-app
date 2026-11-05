@@ -189,5 +189,8 @@ class HomeViewModelTest {
         override fun getThemePreference(): Flow<ThemePreference> = themeFlow
         override suspend fun setThemePreference(theme: ThemePreference) {}
         override fun getEnrichmentJobForExpense(expenseId: Long): Flow<AiEnrichmentJobEntity?> = flowOf(null)
+        override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) {
+            expensesFlow.value = expenses
+        }
     }
 }
