@@ -18,7 +18,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.util.Calendar
+import java.time.Instant
+import java.time.ZoneOffset
+import kotlinx.coroutines.CancellationException
 import java.util.TimeZone
 
 class QuickEntryViewModel(
@@ -95,6 +97,8 @@ class QuickEntryViewModel(
         }
     }
 
+    private var voiceDraftGeneration = 0
+
     fun onDateOptionSelected(option: ExpenseDateOption) {
         val now = timeProvider()
         when (option) {
@@ -109,19 +113,21 @@ class QuickEntryViewModel(
                 }
             }
             ExpenseDateOption.YESTERDAY -> {
-                val cal = Calendar.getInstance(timeZone).apply { timeInMillis = now }
-                cal.add(Calendar.DAY_OF_YEAR, -1)
+                val yesterday = Instant.ofEpochMilli(now).atZone(timeZone.toZoneId())
+                    .minusDays(1).toInstant().toEpochMilli()
                 _uiState.update {
                     it.copy(
                         selectedDateOption = ExpenseDateOption.YESTERDAY,
-                        selectedDateMillis = cal.timeInMillis,
+                        selectedDateMillis = yesterday,
                         showDatePicker = false,
                         dateError = null
                     )
                 }
             }
             ExpenseDateOption.CHOSEN_DATE -> {
-                _uiState.update { it.copy(showDatePicker = true) }
+                _uiState.update {
+                    it.copy(showDatePicker = true, selectedDateMillis = resolveOccurredAt(it, now, timeZone))
+                }
             }
         }
     }
@@ -184,8 +190,10 @@ class QuickEntryViewModel(
 
         _uiState.update { it.copy(isListening = true) }
 
+        val generation = ++voiceDraftGeneration
         repo.startListening(
-            onResult = { transcript ->
+            onResult = voiceResult@{ transcript ->
+                if (generation != voiceDraftGeneration) return@voiceResult
                 val draft = VoiceDraftParser.parseTranscript(transcript)
                 _uiState.update { current ->
                     val minor = Expense.parseToMinorUnits(draft.amountText, current.currency)
@@ -202,7 +210,8 @@ class QuickEntryViewModel(
                     )
                 }
             },
-            onError = { error ->
+            onError = voiceError@{ error ->
+                if (generation != voiceDraftGeneration) return@voiceError
                 val message = when (error) {
                     VoiceInputError.PermissionDenied -> "Microphone permission is required for voice input"
                     VoiceInputError.NoSpeechDetected -> "No speech detected. Please try speaking again."
@@ -222,7 +231,7 @@ class QuickEntryViewModel(
         }
     }
 
-    fun saveExpense() {
+    fun saveExpense(onSaved: () -> Unit = {}) {
         val currentState = _uiState.value
         if (!currentState.isValidInput) {
             _uiState.update {
@@ -231,13 +240,10 @@ class QuickEntryViewModel(
             return
         }
 
-        val targetOccurredAt = if (currentState.selectedDateOption == ExpenseDateOption.TODAY) {
-            timeProvider()
-        } else {
-            currentState.selectedDateMillis
-        }
+        val nowAtSave = timeProvider()
+        val targetOccurredAt = resolveOccurredAt(currentState, nowAtSave, timeZone)
 
-        if (isDateInFuture(targetOccurredAt, timeProvider, timeZone)) {
+        if (isDateInFuture(targetOccurredAt, { nowAtSave }, timeZone)) {
             _uiState.update { it.copy(dateError = "Future dates are not allowed") }
             return
         }
@@ -274,6 +280,9 @@ class QuickEntryViewModel(
                         userMessage = "Expense recorded successfully!"
                     )
                 }
+                onSaved()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
@@ -282,6 +291,21 @@ class QuickEntryViewModel(
                     )
                 }
             }
+        }
+    }
+
+    fun discardDraft() {
+        if (_uiState.value.isSaving) return
+        voiceDraftGeneration++
+        voiceInputRepository?.stopListening()
+        _uiState.update {
+            QuickEntryUiState(
+                currency = it.currency,
+                themePreference = it.themePreference,
+                recentExpenses = it.recentExpenses,
+                voiceInputAvailable = it.voiceInputAvailable,
+                selectedDateMillis = timeProvider()
+            )
         }
     }
 
@@ -300,37 +324,41 @@ class QuickEntryViewModel(
             timeProvider: () -> Long = { System.currentTimeMillis() },
             timeZone: TimeZone = TimeZone.getDefault()
         ): Long {
-            val utcCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-                timeInMillis = utcMillis
-            }
-            val year = utcCal.get(Calendar.YEAR)
-            val month = utcCal.get(Calendar.MONTH)
-            val day = utcCal.get(Calendar.DAY_OF_MONTH)
-
-            val localCal = Calendar.getInstance(timeZone).apply {
-                timeInMillis = timeProvider()
-                set(Calendar.YEAR, year)
-                set(Calendar.MONTH, month)
-                set(Calendar.DAY_OF_MONTH, day)
-            }
-            return localCal.timeInMillis
+            val date = Instant.ofEpochMilli(utcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+            val now = Instant.ofEpochMilli(timeProvider()).atZone(timeZone.toZoneId())
+            return date.atTime(now.toLocalTime()).atZone(timeZone.toZoneId()).toInstant().toEpochMilli()
         }
+
+        fun localMillisToPickerUtc(millis: Long, timeZone: TimeZone = TimeZone.getDefault()): Long =
+            Instant.ofEpochMilli(millis).atZone(timeZone.toZoneId()).toLocalDate()
+                .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+
+        fun isPickerDateSelectable(
+            utcMillis: Long,
+            nowMillis: Long = System.currentTimeMillis(),
+            timeZone: TimeZone = TimeZone.getDefault()
+        ): Boolean = !Instant.ofEpochMilli(utcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+            .isAfter(Instant.ofEpochMilli(nowMillis).atZone(timeZone.toZoneId()).toLocalDate())
 
         fun isDateInFuture(
             targetMillis: Long,
             timeProvider: () -> Long = { System.currentTimeMillis() },
             timeZone: TimeZone = TimeZone.getDefault()
-        ): Boolean {
-            val nowCal = Calendar.getInstance(timeZone).apply { timeInMillis = timeProvider() }
-            val targetCal = Calendar.getInstance(timeZone).apply { timeInMillis = targetMillis }
+        ): Boolean = Instant.ofEpochMilli(targetMillis).atZone(timeZone.toZoneId()).toLocalDate()
+            .isAfter(Instant.ofEpochMilli(timeProvider()).atZone(timeZone.toZoneId()).toLocalDate())
 
-            val nowYear = nowCal.get(Calendar.YEAR)
-            val nowDay = nowCal.get(Calendar.DAY_OF_YEAR)
-
-            val targetYear = targetCal.get(Calendar.YEAR)
-            val targetDay = targetCal.get(Calendar.DAY_OF_YEAR)
-
-            return (targetYear > nowYear) || (targetYear == nowYear && targetDay > nowDay)
+        private fun resolveOccurredAt(state: QuickEntryUiState, nowMillis: Long, timeZone: TimeZone): Long {
+            val zone = timeZone.toZoneId()
+            val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
+            val date = when (state.selectedDateOption) {
+                ExpenseDateOption.TODAY -> return nowMillis
+                // Relative shortcuts remain relative if an open draft crosses midnight.
+                ExpenseDateOption.YESTERDAY -> now.toLocalDate().minusDays(1)
+                ExpenseDateOption.CHOSEN_DATE -> Instant.ofEpochMilli(state.selectedDateMillis)
+                    .atZone(zone).toLocalDate()
+            }
+            // java.time moves gap times forward and uses the earlier offset for overlaps.
+            return date.atTime(now.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
         }
     }
 

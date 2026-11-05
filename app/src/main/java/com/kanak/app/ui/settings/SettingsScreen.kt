@@ -397,7 +397,7 @@ private fun BackupAndRestoreSection(
                 }
 
                 Text(
-                    text = "Export your expenses and preferences to a local JSON file using Storage Access Framework, or restore data from an existing backup.",
+                    text = "Export your expenses and preferences as an unencrypted JSON file. Restore will be available in a later update.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -422,8 +422,8 @@ private fun BackupAndRestoreSection(
 
                     KanakPrimaryButton(
                         onClick = onRestoreClick,
-                        enabled = !isExporting && !isRestoring,
-                        text = if (isRestoring) "Restoring..." else "Restore Backup",
+                        enabled = false,
+                        text = "Restore coming soon",
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)

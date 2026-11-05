@@ -7,7 +7,38 @@ import com.kanak.app.model.ExpenseCategory
 
 object KanakBackupSerializer {
 
+    /** Bound actual bytes before UTF-8 decoding, including providers with no size metadata. */
+    fun fromInputStream(input: java.io.InputStream, checkCancelled: () -> Unit = {}): KanakBackup {
+        val bytes = java.io.ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        var total = 0L
+        while (true) {
+            checkCancelled()
+            val count = input.read(buffer, 0,
+                minOf(buffer.size.toLong(), KanakBackup.MAX_BACKUP_BYTES - total + 1).toInt())
+            if (count == -1) break
+            total += count
+            if (total > KanakBackup.MAX_BACKUP_BYTES) {
+                throw BackupException.LimitExceeded("Backup exceeds maximum byte size")
+            }
+            bytes.write(buffer, 0, count)
+        }
+        val decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        val text = try {
+            decoder.decode(java.nio.ByteBuffer.wrap(bytes.toByteArray())).toString()
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            throw BackupException.CorruptedJson("Backup contains invalid UTF-8")
+        }
+        return fromJson(text)
+    }
+
+
     fun toJson(backup: KanakBackup): String {
+        if (backup.expenses.size > KanakBackup.MAX_EXPENSE_RECORDS) {
+            throw BackupException.LimitExceeded("Backup exceeds maximum record count")
+        }
         val sb = StringBuilder()
         sb.append("{\n")
         sb.append("  \"format\": \"").append(escapeJson(backup.format)).append("\",\n")
@@ -51,17 +82,20 @@ object KanakBackupSerializer {
         if (versionRaw !is Long) {
             throw BackupException.CorruptedJson("Missing or invalid integer 'version' in backup")
         }
-        val version = versionRaw.toInt()
-        if (version != KanakBackup.CURRENT_BACKUP_VERSION) {
-            throw BackupException.UnsupportedSchemaVersion(version)
+        if (versionRaw != KanakBackup.CURRENT_BACKUP_VERSION.toLong()) {
+            throw BackupException.UnsupportedSchemaVersion(versionRaw)
         }
+        val version = versionRaw.toInt()
 
         val exportedAtRaw = rootMap["exportedAt"]
-        if (exportedAtRaw !is Long) {
+        if (exportedAtRaw !is Long || exportedAtRaw <= 0L) {
             throw BackupException.CorruptedJson("Missing or invalid integer 'exportedAt' timestamp in backup")
         }
 
-        val appVersion = rootMap["appVersion"] as? String ?: "1.0"
+        val appVersion = if (rootMap.containsKey("appVersion")) {
+            rootMap["appVersion"] as? String
+                ?: throw BackupException.CorruptedJson("Invalid appVersion type")
+        } else "1.0"
 
         // Preferences validation
         val prefMap = rootMap["preferences"] as? Map<*, *>
@@ -69,8 +103,8 @@ object KanakBackupSerializer {
 
         val defaultCurrency = prefMap["defaultCurrency"] as? String
             ?: throw BackupException.MissingRequiredField("Missing 'defaultCurrency' in preferences")
-        if (defaultCurrency.isBlank()) {
-            throw BackupException.MissingRequiredField("Blank 'defaultCurrency' in preferences")
+        if (defaultCurrency !in setOf("INR", "USD", "EUR", "GBP")) {
+            throw BackupException.MissingRequiredField("Unsupported defaultCurrency in preferences")
         }
 
         val themePrefStr = prefMap["themePreference"] as? String
@@ -125,8 +159,10 @@ object KanakBackupSerializer {
             // Currency validation
             val currency = expMap["currency"] as? String
                 ?: throw BackupException.MissingRequiredField("Missing 'currency' for expense ID $idRaw")
-            if (currency.isBlank()) {
-                throw BackupException.MissingRequiredField("Blank currency for expense ID $idRaw")
+            if (!currency.matches(Regex("[A-Z]{3}")) || runCatching {
+                    java.util.Currency.getInstance(currency)
+                }.isFailure) {
+                throw BackupException.MissingRequiredField("Invalid currency for expense ID $idRaw")
             }
 
             // Timestamp validation
@@ -136,10 +172,10 @@ object KanakBackupSerializer {
             }
 
             // Note (optional)
-            val note = expMap["note"] as? String
+            val note = nullableString(expMap, "note")
 
             // Category validation (nullable, but if non-null must match enum strictly)
-            val categoryStr = expMap["category"] as? String
+            val categoryStr = nullableString(expMap, "category")
             val category: ExpenseCategory? = if (categoryStr != null) {
                 try {
                     ExpenseCategory.valueOf(categoryStr)
@@ -188,7 +224,7 @@ object KanakBackupSerializer {
             exportedAt = exportedAtRaw,
             appVersion = appVersion,
             preferences = preferences,
-            expenses = backupExpenses.toList()
+            expenses = java.util.Collections.unmodifiableList(backupExpenses)
         )
     }
 
@@ -205,24 +241,32 @@ object KanakBackupSerializer {
         )
     }
 
-    private fun escapeJson(str: String): String {
-        return str.replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\b", "\\b")
-            .replace("\u000C", "\\f")
-            .replace("\n", "\\n")
-            .replace("\r", "\\r")
-            .replace("\t", "\\t")
+    private fun nullableString(map: Map<*, *>, key: String): String? {
+        val value = map[key]
+        if (value == null) return null
+        return value as? String
+            ?: throw BackupException.CorruptedJson("Invalid type for nullable field '$key'")
     }
+
+    private fun escapeJson(str: String): String = buildString {
+        for (c in str) when (c) {
+            '\\' -> append("\\\\")
+            '"' -> append("\\\"")
+            else -> if (c.code < 0x20) append("\\u%04x".format(c.code)) else append(c)
+        }
+    }
+
 }
 
 private class SimpleJsonParser(private val json: String) {
     private var index = 0
     private val len = json.length
+    private var depth = 0
+    private var values = 0
 
     init {
         if (json.toByteArray(Charsets.UTF_8).size > KanakBackup.MAX_BACKUP_BYTES) {
-            throw BackupException.LimitExceeded("Backup payload exceeds maximum byte size of 50MB")
+            throw BackupException.LimitExceeded("Backup payload exceeds maximum byte size")
         }
     }
 
@@ -240,7 +284,7 @@ private class SimpleJsonParser(private val json: String) {
     }
 
     private fun skipWhitespace() {
-        while (index < len && json[index].isWhitespace()) {
+        while (index < len && json[index] in " \t\r\n") {
             index++
         }
     }
@@ -268,6 +312,9 @@ private class SimpleJsonParser(private val json: String) {
                     'u' -> {
                         if (index + 4 <= len) {
                             val hex = json.substring(index, index + 4)
+                            if (!hex.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                                throw BackupException.CorruptedJson("Invalid unicode escape")
+                            }
                             index += 4
                             try {
                                 sb.append(hex.toInt(16).toChar())
@@ -281,6 +328,7 @@ private class SimpleJsonParser(private val json: String) {
                     else -> throw BackupException.CorruptedJson("Invalid escape character '\\$escaped'")
                 }
             } else {
+                if (c.code < 0x20) throw BackupException.CorruptedJson("Unescaped control character")
                 sb.append(c)
             }
         }
@@ -347,6 +395,9 @@ private class SimpleJsonParser(private val json: String) {
 
         while (index < len) {
             skipWhitespace()
+            if (list.size >= KanakBackup.MAX_EXPENSE_RECORDS) {
+                throw BackupException.LimitExceeded("Backup exceeds maximum record count")
+            }
             val value = parseValue()
             list.add(value)
             skipWhitespace()
@@ -369,9 +420,12 @@ private class SimpleJsonParser(private val json: String) {
     private fun parseValue(): Any? {
         skipWhitespace()
         if (index >= len) throw BackupException.CorruptedJson("Unexpected end of JSON input")
+        if (++values > 750_000) throw BackupException.LimitExceeded("Too many JSON values")
         return when (val c = json[index]) {
-            '{' -> parseObject()
-            '[' -> parseArray()
+            '{', '[' -> {
+                if (++depth > 32) throw BackupException.LimitExceeded("JSON nesting is too deep")
+                try { if (c == '{') parseObject() else parseArray() } finally { depth-- }
+            }
             '"' -> parseString()
             't', 'f' -> {
                 if (json.startsWith("true", index)) {
@@ -393,41 +447,19 @@ private class SimpleJsonParser(private val json: String) {
         }
     }
 
-    private fun parseNumber(): Number {
+    // Keep non-integer JSON tokens opaque: financial fields must be exact Long tokens.
+    private data class DecimalToken(val text: String)
+
+    private fun parseNumber(): Any {
         val start = index
-        if (json[index] == '-') index++
-        var hasDecimal = false
-        var hasExponent = false
+        while (index < len && json[index] in "-+0123456789.eE") index++
+        val token = json.substring(start, index)
+        if (!NUMBER.matches(token)) throw BackupException.CorruptedJson("Malformed JSON number")
+        if (token.any { it == '.' || it == 'e' || it == 'E' }) return DecimalToken(token)
+        return token.toLongOrNull() ?: throw BackupException.CorruptedJson("Integer overflow")
+    }
 
-        while (index < len) {
-            val c = json[index]
-            if (c.isDigit()) {
-                index++
-            } else if (c == '.') {
-                if (hasDecimal || hasExponent) throw BackupException.CorruptedJson("Malformed number at position $index")
-                hasDecimal = true
-                index++
-            } else if (c == 'e' || c == 'E') {
-                if (hasExponent) throw BackupException.CorruptedJson("Malformed number at position $index")
-                hasExponent = true
-                index++
-                if (index < len && (json[index] == '+' || json[index] == '-')) {
-                    index++
-                }
-            } else {
-                break
-            }
-        }
-
-        val numStr = json.substring(start, index)
-        if (hasDecimal || hasExponent) {
-            return numStr.toDoubleOrNull() ?: throw BackupException.CorruptedJson("Invalid double value: $numStr")
-        }
-
-        return try {
-            numStr.toLong()
-        } catch (_: NumberFormatException) {
-            throw BackupException.CorruptedJson("Integer overflow in number: $numStr")
-        }
+    companion object {
+        private val NUMBER = Regex("-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?")
     }
 }

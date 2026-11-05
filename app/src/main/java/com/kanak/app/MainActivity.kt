@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.collectAsState
@@ -170,8 +171,16 @@ class MainActivity : ComponentActivity() {
 
                     if (homeUiState.showQuickEntry) {
                         ModalBottomSheet(
-                            onDismissRequest = { homeViewModel.closeQuickEntry() },
-                            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                            onDismissRequest = {
+                                if (!quickEntryUiState.isSaving) {
+                                    quickEntryViewModel.discardDraft()
+                                    homeViewModel.closeQuickEntry()
+                                }
+                            },
+                            sheetState = rememberModalBottomSheetState(
+                                skipPartiallyExpanded = true,
+                                confirmValueChange = { it != SheetValue.Hidden || !quickEntryUiState.isSaving }
+                            )
                         ) {
                             QuickEntryScreen(
                                 uiState = quickEntryUiState,
@@ -184,8 +193,9 @@ class MainActivity : ComponentActivity() {
                                 onMicTapped = quickEntryViewModel::onMicTapped,
                                 onVoicePermissionDenied = quickEntryViewModel::onVoicePermissionDenied,
                                 onSaveClicked = {
-                                    quickEntryViewModel.saveExpense()
-                                    homeViewModel.closeQuickEntry()
+                                    quickEntryViewModel.saveExpense {
+                                        homeViewModel.closeQuickEntry()
+                                    }
                                 },
                                 onClearUserMessage = quickEntryViewModel::clearUserMessage,
                                 modifier = Modifier.fillMaxSize()

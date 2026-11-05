@@ -65,8 +65,6 @@ import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
-import java.util.Calendar
-import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -330,15 +328,10 @@ fun QuickEntryScreen(
 
     if (uiState.showDatePicker) {
         val datePickerState = rememberDatePickerState(
-            initialSelectedDateMillis = uiState.selectedDateMillis,
+            initialSelectedDateMillis = QuickEntryViewModel.localMillisToPickerUtc(uiState.selectedDateMillis),
             selectableDates = object : SelectableDates {
                 override fun isSelectableDate(utcTimeMillis: Long): Boolean {
-                    val todayMaxUtc = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-                        set(Calendar.HOUR_OF_DAY, 23)
-                        set(Calendar.MINUTE, 59)
-                        set(Calendar.SECOND, 59)
-                    }.timeInMillis
-                    return utcTimeMillis <= todayMaxUtc
+                    return QuickEntryViewModel.isPickerDateSelectable(utcTimeMillis)
                 }
             }
         )
