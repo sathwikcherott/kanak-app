@@ -34,6 +34,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.kanak.app.data.backup.BackupFileNames
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,7 +81,8 @@ fun SettingsScreen(
     onCancelRestore: () -> Unit,
     onClearBackupError: () -> Unit,
     onClearUserMessage: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onManageBackupFiles: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -161,9 +167,9 @@ fun SettingsScreen(
                         hasPreview = uiState.pendingRestoreSummary != null,
                         isRestoring = uiState.isRestoringBackup,
                         onExportClick = {
-                            val timeStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                            exportLauncher.launch("kanak_backup_$timeStr.json")
+                            exportLauncher.launch(BackupFileNames.create())
                         },
+                        onManageFiles = onManageBackupFiles,
                         onRestoreClick = {
                             restoreLauncher.launch(arrayOf("application/json", "*/*"))
                         }
@@ -372,8 +378,10 @@ private fun BackupAndRestoreSection(
     isRestoring: Boolean,
     onExportClick: () -> Unit,
     onRestoreClick: () -> Unit,
+    onManageFiles: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault()) }
     val lastBackupText = if (lastBackupTime != null) {
         "Last exported: ${dateFormat.format(Date(lastBackupTime))}"
@@ -441,6 +449,13 @@ private fun BackupAndRestoreSection(
                             .weight(1f)
                             .height(48.dp)
                     )
+                }
+                TextButton(onClick = { showAdvanced = !showAdvanced }, enabled = !isExporting && !isRestoring && !hasPreview) {
+                    Text(if (showAdvanced) "Hide advanced" else "Advanced", style = MaterialTheme.typography.labelMedium)
+                }
+                if (showAdvanced) {
+                    Text("Keep your backup files together in a Kanak folder.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onManageFiles, enabled = !isExporting && !isRestoring && !hasPreview) { Text("Manage backup files") }
                 }
             }
         }

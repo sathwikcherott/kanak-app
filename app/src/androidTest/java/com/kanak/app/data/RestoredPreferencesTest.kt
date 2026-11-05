@@ -19,6 +19,7 @@ class RestoredPreferencesTest {
         val preferences = UserPreferencesRepository(store)
         try {
             preferences.setLastBackupExportedTime(1234L)
+            preferences.setBackupFolderUri("content://test/tree/kanak")
             val old = store.data.first()
             val observed = async(start = CoroutineStart.UNDISPATCHED) {
                 store.data.first { it != old }
@@ -28,6 +29,7 @@ class RestoredPreferencesTest {
             assertEquals("USD", updated[stringPreferencesKey("default_currency")])
             assertEquals("LIGHT", updated[stringPreferencesKey("theme_preference")])
             assertEquals(1234L, preferences.lastBackupExportedTime.first())
+            assertEquals("content://test/tree/kanak", preferences.backupFolderUri.first())
         } finally {
             scope.cancel()
             scope.coroutineContext.job.join()

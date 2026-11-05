@@ -47,4 +47,13 @@ class SettingsBackupScreenTest {
         compose.onNodeWithText("Expenses restored; previous settings kept.").assertIsDisplayed()
         compose.onNodeWithText("OK").assertIsEnabled()
     }
+    @Test fun backupManagementStaysBehindAdvanced() {
+        render(SettingsUiState())
+        compose.onNodeWithText("Manage backup files").assertDoesNotExist()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Advanced"))
+        compose.onNodeWithText("Advanced").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Manage backup files"))
+        compose.onNodeWithText("Manage backup files").assertIsDisplayed()
+    }
+
 }

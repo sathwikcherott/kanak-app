@@ -23,3 +23,15 @@ The preview is read-only. Confirmation restores that in-memory validated data, n
 5. Select an invalid JSON file. Confirm it reports an error before offering restoration and leaves current records intact.
 
 CI runs the existing JVM suite, debug APK and instrumentation APK compilation, independent codec/calendar checks, and real Room/DataStore/Compose tests on Android 35. The emulator uses isolated test databases and temporary test files; it does not exercise a real document provider's system picker. Physical-device picker behavior and visual QA still require the acceptance check above.
+
+## Filenames and manual cleanup
+
+New exports use `Kanak_Backup_yyyy-MM-dd_HH-mm-ss-SSS_v1.json`, with the device's local creation time and Latin digits regardless of device language. The date-first format sorts by local time; milliseconds reduce routine filename collisions. Android's Create Document picker still lets the user choose the folder and name and prevents overwriting an existing document automatically. Existing exports are not renamed or moved.
+
+Settings → Backup & Restore → **Advanced** → **Manage backup files** opens manual cleanup. The user grants access to a chosen folder via the system picker; access and that folder selection are remembered. For tidy storage, use a dedicated Kanak subfolder. Android may prevent choosing the Downloads root or storage root; a subfolder can be used instead. Exports still go to the location chosen in the export picker, not automatically to the management folder.
+
+Cleanup only scans direct children with `Kanak_Backup_…json` / legacy `kanak_backup_…json` style names and then verifies their full backup contents. Unrelated, invalid, unsupported-version and unreadable files are not offered for deletion. No recursive filesystem scan or broad storage permission is used. Limits of 500 directory entries and 100 candidate backups prevent an incomplete, unbounded cleanup scan.
+
+The newest verified backup (by the JSON export timestamp) is retained. **Select older · keep newest 3** selects only deletable older entries; users can also individually select older files. Nothing is deleted before a confirmation naming the files. Execution rechecks folder membership, name, content fingerprint, provider support and which backup is newest. Read-only, missing or changed files are skipped. Providers do not expose an atomic compare-and-delete operation: a concurrent external edit after the final content check cannot be made transactional. Partial deletion is reported and the list is refreshed. Financial records and the last-exported timestamp are not modified by cleanup.
+
+M34 check: export several disposable backups into one Kanak folder, expand Advanced, choose that folder, verify both legacy/new names are recognized, cancel deletion once, and then delete selected older files. Confirm the newest file and current expenses remain. Close/reopen and verify the folder is remembered. Also cancel the folder picker and try a read-only/revoked folder if available.

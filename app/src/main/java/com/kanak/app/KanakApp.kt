@@ -1,6 +1,9 @@
 package com.kanak.app
 
 import android.app.Application
+import com.kanak.app.data.backup.AndroidBackupDocumentStore
+import com.kanak.app.data.backup.AndroidBackupFolderAccess
+import com.kanak.app.data.backup.BackupFileCatalog
 import com.kanak.app.data.backup.BackupRepository
 import com.kanak.app.data.backup.OfflineBackupRepository
 import com.kanak.app.data.local.KanakDatabase
@@ -21,6 +24,8 @@ class KanakApp : Application() {
             database = database
         )
     }
+    val backupFileCatalog by lazy { BackupFileCatalog(AndroidBackupDocumentStore(this)) }
+    val backupFolderAccess by lazy { AndroidBackupFolderAccess(this, userPreferencesRepository) }
     val backupRepository: BackupRepository by lazy {
         OfflineBackupRepository(
             persistence = expenseRepository,

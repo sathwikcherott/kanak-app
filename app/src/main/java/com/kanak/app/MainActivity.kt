@@ -37,6 +37,9 @@ import com.kanak.app.ui.navigation.KanakTab
 import com.kanak.app.ui.settings.SettingsScreen
 import com.kanak.app.ui.settings.SettingsViewModel
 import com.kanak.app.ui.transactions.TransactionsViewModel
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.kanak.app.ui.settings.BackupFilesRoute
+import com.kanak.app.ui.settings.BackupFilesViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
@@ -67,6 +70,11 @@ class MainActivity : ComponentActivity() {
         SettingsViewModel.Factory(app.expenseRepository, app.backupRepository)
     }
 
+    private val backupFilesViewModel: BackupFilesViewModel by viewModels {
+        val app = application as KanakApp
+        BackupFilesViewModel.Factory(app.backupFileCatalog, app.backupFolderAccess)
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -76,6 +84,7 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             val context = LocalContext.current
+            var showBackupFiles by rememberSaveable { mutableStateOf(false) }
             var showExitDialog by remember { mutableStateOf(value = false) }
 
             // Sheet visibility is navigation state, not dashboard content. Keep the
@@ -171,6 +180,7 @@ class MainActivity : ComponentActivity() {
                                 onCloseCurrencyDialog = settingsViewModel::dismissCurrencyDialog,
                                 onCurrencySelected = settingsViewModel::onCurrencySelected,
                                 onExportBackup = settingsViewModel::exportBackup,
+                                onManageBackupFiles = { showBackupFiles = true },
                                 onRestoreFileSelected = settingsViewModel::onRestoreFileSelected,
                                 onConfirmRestore = settingsViewModel::confirmRestore,
                                 onCancelRestore = settingsViewModel::cancelRestore,
@@ -185,6 +195,10 @@ class MainActivity : ComponentActivity() {
                         homeViewModel = homeViewModel,
                         entryViewModel = quickEntryViewModel
                     )
+
+                    if (showBackupFiles) {
+                        BackupFilesRoute(backupFilesViewModel) { showBackupFiles = false }
+                    }
 
                     if (showExitDialog) {
                         ExitConfirmationDialog(
