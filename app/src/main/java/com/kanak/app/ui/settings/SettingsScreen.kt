@@ -627,7 +627,7 @@ private fun CurrencySelectionDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isRestoring) {
+            TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
         },

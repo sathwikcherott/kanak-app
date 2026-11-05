@@ -138,6 +138,7 @@ class OfflineExpenseRepository(
                 expenseDao.insertExpenses(entities)
             }
             restoreGeneration++
+            Unit
         }
     }
 
