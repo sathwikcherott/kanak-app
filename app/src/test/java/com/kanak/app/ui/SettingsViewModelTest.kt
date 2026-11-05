@@ -2,6 +2,7 @@ package com.kanak.app.ui
 
 import android.content.Context
 import android.net.Uri
+import com.kanak.app.data.backup.RestoreOutcome
 import com.kanak.app.data.backup.BackupRepository
 import com.kanak.app.data.backup.BackupSummary
 import com.kanak.app.data.backup.KanakBackup
@@ -128,7 +129,7 @@ class SettingsViewModelTest {
             Result.success(
                 BackupSummary(1, System.currentTimeMillis(), 0, 0, "INR", ThemePreference.DARK, KanakBackup())
             )
-        override suspend fun restoreBackup(backup: KanakBackup): Result<Unit> = Result.success(Unit)
+        override suspend fun restoreBackup(backup: KanakBackup): Result<RestoreOutcome> = Result.success(RestoreOutcome.COMPLETE)
         override fun getLastBackupExportedTime(): Flow<Long?> = lastBackupFlow
         override suspend fun recordBackupExportedTime(timestamp: Long) {
             lastBackupFlow.value = timestamp

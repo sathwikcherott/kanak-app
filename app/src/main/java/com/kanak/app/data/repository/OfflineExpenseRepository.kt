@@ -19,6 +19,13 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
+import com.kanak.app.data.backup.*
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.kanak.app.data.local.KanakDatabase
 
 class OfflineExpenseRepository(
@@ -26,7 +33,49 @@ class OfflineExpenseRepository(
     private val userPreferencesDataSource: UserPreferencesDataSource,
     private val aiEnrichmentJobDao: AiEnrichmentJobDao? = null,
     private val database: KanakDatabase? = null
-) : ExpenseRepository {
+) : ExpenseRepository, BackupPersistence {
+    private val writes = Mutex()
+    private var restoreGeneration = 0L
+
+    override suspend fun snapshotForBackup(): KanakBackup = withContext(Dispatchers.IO) {
+        writes.withLock {
+            KanakBackup(
+                preferences = BackupPreferences(
+                    userPreferencesDataSource.defaultCurrency.first(),
+                    userPreferencesDataSource.themePreference.first()
+                ),
+                expenses = getAllExpenses().first().map(BackupExpense::fromDomainModel)
+            )
+        }
+    }
+
+    override suspend fun restoreValidatedBackup(backup: KanakBackup): RestoreOutcome = withContext(Dispatchers.IO) {
+        // Revalidate even for callers bypassing the file picker; use a private immutable copy.
+        val validated = KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup))
+        val entities = validated.expenses.map { it.toDomainModel().toEntity() }
+        val db = checkNotNull(database) { "Database required for atomic replacement" }
+        writes.withLock {
+            currentCoroutineContext().ensureActive()
+            // Once replacement starts, finish the database + preference outcome even if the UI leaves.
+            withContext(NonCancellable) {
+                db.runInTransaction {
+                    db.aiEnrichmentJobDao().deleteAllJobs()
+                    db.expenseDao().deleteAllExpenses()
+                    db.expenseDao().insertExpenses(entities)
+                }
+                restoreGeneration++
+                try {
+                    userPreferencesDataSource.restorePreferences(
+                        validated.preferences.defaultCurrency, validated.preferences.themePreference
+                    )
+                    RestoreOutcome.COMPLETE
+                } catch (_: Exception) {
+                    RestoreOutcome.EXPENSES_RESTORED_PREFERENCES_FAILED
+                }
+            }
+        }
+    }
+
 
     override fun getAllExpenses(): Flow<List<Expense>> {
         return expenseDao.getAllExpenses().map { entities ->
@@ -45,13 +94,18 @@ class OfflineExpenseRepository(
      * Completes immediately locally without network calls or external worker dependencies.
      */
     override suspend fun saveExpense(expense: Expense): Long = withContext(Dispatchers.IO) {
-        val expenseId = expenseDao.insertExpenseInTransaction(expense.toEntity())
-        aiEnrichmentJobDao?.enqueueJobForExpense(expenseId)
-        expenseId
+        writes.withLock {
+            val save = {
+                val id = expenseDao.insertExpenseInTransaction(expense.toEntity())
+                aiEnrichmentJobDao?.enqueueJobForExpense(id)
+                id
+            }
+            database?.runInTransaction(java.util.concurrent.Callable { save() }) ?: save()
+        }
     }
 
     override suspend fun deleteExpense(id: Long) = withContext(Dispatchers.IO) {
-        expenseDao.deleteExpenseById(id)
+        writes.withLock { expenseDao.deleteExpenseById(id) }
     }
 
     override fun getDefaultCurrency(): Flow<String> {
@@ -59,7 +113,7 @@ class OfflineExpenseRepository(
     }
 
     override suspend fun setDefaultCurrency(currency: String) = withContext(Dispatchers.IO) {
-        userPreferencesDataSource.setDefaultCurrency(currency)
+        writes.withLock { userPreferencesDataSource.setDefaultCurrency(currency) }
     }
 
     override fun getThemePreference(): Flow<ThemePreference> {
@@ -67,7 +121,7 @@ class OfflineExpenseRepository(
     }
 
     override suspend fun setThemePreference(theme: ThemePreference) = withContext(Dispatchers.IO) {
-        userPreferencesDataSource.setThemePreference(theme)
+        writes.withLock { userPreferencesDataSource.setThemePreference(theme) }
     }
 
     override fun getEnrichmentJobForExpense(expenseId: Long): Flow<AiEnrichmentJobEntity?> {
@@ -77,10 +131,13 @@ class OfflineExpenseRepository(
     override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) = withContext(Dispatchers.IO) {
         val entities = expenses.map { it.toEntity() }
         val db = checkNotNull(database) { "Database required for atomic replacement" }
-        db.runInTransaction {
-            aiEnrichmentJobDao?.deleteAllJobs()
-            expenseDao.deleteAllExpenses()
-            expenseDao.insertExpenses(entities)
+        writes.withLock {
+            db.runInTransaction {
+                db.aiEnrichmentJobDao().deleteAllJobs()
+                expenseDao.deleteAllExpenses()
+                expenseDao.insertExpenses(entities)
+            }
+            restoreGeneration++
         }
     }
 
@@ -99,18 +156,14 @@ class OfflineExpenseRepository(
         maxRetries: Int = 3
     ): Result<Unit> = withContext(Dispatchers.IO) {
         val jobDao = aiEnrichmentJobDao ?: return@withContext Result.failure(IllegalStateException("No job DAO configured"))
-        val job = jobDao.getJobForExpenseSync(expenseId) ?: return@withContext Result.failure(IllegalArgumentException("No enrichment job found for expense"))
-
-        val now = System.currentTimeMillis()
-        jobDao.recordAttempt(
-            jobId = job.jobId,
-            status = EnrichmentJobStatus.IN_PROGRESS.name,
-            retryCount = job.retryCount + 1,
-            lastAttemptAt = now,
-            updatedAt = now
-        )
-
-        val currentExpense = expenseDao.getExpenseByIdSync(expenseId)
+        val (job, generation, initialExpense) = writes.withLock {
+            val job = jobDao.getJobForExpenseSync(expenseId)
+                ?: return@withContext Result.failure(IllegalArgumentException("No enrichment job found for expense"))
+            val now = System.currentTimeMillis()
+            jobDao.recordAttempt(job.jobId, EnrichmentJobStatus.IN_PROGRESS.name, job.retryCount + 1, now, now)
+            Triple(job, restoreGeneration, expenseDao.getExpenseByIdSync(expenseId))
+        }
+        val currentExpense = initialExpense
 
         // Data minimization: Request payload includes ONLY description (note) & currentCategory enum
         val currentCategoryEnum = currentExpense?.category?.let { catName ->
@@ -124,52 +177,58 @@ class OfflineExpenseRepository(
 
         val aiResult = aiCategorizer.categorizeExpense(minRequest)
 
-        if (aiResult.isSuccess) {
-            val result = aiResult.getOrThrow()
-            val completedTime = System.currentTimeMillis()
-
-            jobDao.completeJob(
-                jobId = job.jobId,
-                status = EnrichmentJobStatus.COMPLETED.name,
-                suggestedCategory = result.suggestedCategory?.name,
-                confidenceScore = result.confidenceScore,
-                reasoning = result.reasoning,
-                tags = result.suggestedTags.joinToString(","),
-                updatedAt = completedTime
-            )
-
-            // Category update ONLY if user has NOT manually set/confirmed category
-            if (currentExpense != null) {
-                val isUserConfirmed = currentExpense.categorizationState == CategorizationState.CONFIRMED.name
-                val hasUserCategory = currentExpense.category != null
-
-                if ((!isUserConfirmed) && (!hasUserCategory) && (result.suggestedCategory != null)) {
-                    val updatedExpense = currentExpense.copy(
-                        category = result.suggestedCategory.name,
-                        categorizationState = CategorizationState.AUTO_CATEGORIZED.name
-                        // Protected fields amountMinor, currency, occurredAt, note are 100% untouched
-                    )
-                    expenseDao.updateExpense(updatedExpense)
-                }
+        writes.withLock {
+            if (generation != restoreGeneration || jobDao.getJobForExpenseSync(expenseId)?.jobId != job.jobId) {
+                return@withContext Result.success(Unit) // Result belongs to data that has been replaced.
             }
+            val latestExpense = expenseDao.getExpenseByIdSync(expenseId)
+            if (aiResult.isSuccess) {
+                val result = aiResult.getOrThrow()
+                val completedTime = System.currentTimeMillis()
 
-            Result.success(Unit)
-        } else {
-            val error = aiResult.exceptionOrNull()
-            val failedTime = System.currentTimeMillis()
-            val newRetryCount = job.retryCount + 1
-            val nextStatus = if (newRetryCount >= maxRetries) EnrichmentJobStatus.FAILED.name else EnrichmentJobStatus.PENDING.name
+                jobDao.completeJob(
+                    jobId = job.jobId,
+                    status = EnrichmentJobStatus.COMPLETED.name,
+                    suggestedCategory = result.suggestedCategory?.name,
+                    confidenceScore = result.confidenceScore,
+                    reasoning = result.reasoning,
+                    tags = result.suggestedTags.joinToString(","),
+                    updatedAt = completedTime
+                )
 
-            jobDao.recordAttempt(
-                jobId = job.jobId,
-                status = nextStatus,
-                retryCount = newRetryCount,
-                lastAttemptAt = failedTime,
-                updatedAt = failedTime,
-                errorMessage = error?.localizedMessage ?: "AI enrichment failed"
-            )
+                // Category update ONLY if user has NOT manually set/confirmed category
+                if (latestExpense != null) {
+                    val isUserConfirmed = latestExpense.categorizationState == CategorizationState.CONFIRMED.name
+                    val hasUserCategory = latestExpense.category != null
 
-            Result.failure(error ?: Exception("AI enrichment failed"))
+                    if ((!isUserConfirmed) && (!hasUserCategory) && (result.suggestedCategory != null)) {
+                        val updatedExpense = latestExpense.copy(
+                            category = result.suggestedCategory.name,
+                            categorizationState = CategorizationState.AUTO_CATEGORIZED.name
+                            // Protected fields amountMinor, currency, occurredAt, note are 100% untouched
+                        )
+                        expenseDao.updateExpense(updatedExpense)
+                    }
+                }
+
+                Result.success(Unit)
+            } else {
+                val error = aiResult.exceptionOrNull()
+                val failedTime = System.currentTimeMillis()
+                val newRetryCount = job.retryCount + 1
+                val nextStatus = if (newRetryCount >= maxRetries) EnrichmentJobStatus.FAILED.name else EnrichmentJobStatus.PENDING.name
+
+                jobDao.recordAttempt(
+                    jobId = job.jobId,
+                    status = nextStatus,
+                    retryCount = newRetryCount,
+                    lastAttemptAt = failedTime,
+                    updatedAt = failedTime,
+                    errorMessage = error?.localizedMessage ?: "AI enrichment failed"
+                )
+
+                Result.failure(error ?: Exception("AI enrichment failed"))
+            }
         }
     }
 }

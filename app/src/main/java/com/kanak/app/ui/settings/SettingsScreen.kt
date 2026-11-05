@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -156,6 +158,7 @@ fun SettingsScreen(
                     BackupAndRestoreSection(
                         lastBackupTime = uiState.lastBackupExportedTime,
                         isExporting = uiState.isExportingBackup,
+                        hasPreview = uiState.pendingRestoreSummary != null,
                         isRestoring = uiState.isRestoringBackup,
                         onExportClick = {
                             val timeStr = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
@@ -191,8 +194,17 @@ fun SettingsScreen(
             if (uiState.pendingRestoreSummary != null) {
                 RestoreConfirmationDialog(
                     summary = uiState.pendingRestoreSummary,
+                    isRestoring = uiState.isRestoringBackup,
                     onConfirm = onConfirmRestore,
                     onDismiss = onCancelRestore
+                )
+            }
+
+            if (uiState.restoreWarning != null) {
+                BackupErrorDialog(
+                    errorMessage = uiState.restoreWarning,
+                    title = "Expenses restored",
+                    onDismiss = onClearUserMessage
                 )
             }
 
@@ -356,6 +368,7 @@ private fun CurrencySection(
 private fun BackupAndRestoreSection(
     lastBackupTime: Long?,
     isExporting: Boolean,
+    hasPreview: Boolean,
     isRestoring: Boolean,
     onExportClick: () -> Unit,
     onRestoreClick: () -> Unit,
@@ -397,7 +410,7 @@ private fun BackupAndRestoreSection(
                 }
 
                 Text(
-                    text = "Export your expenses and preferences as an unencrypted JSON file. Restore will be available in a later update.",
+                    text = "Export your expenses and preferences as an unencrypted JSON file. Restore replaces your current expenses and preferences. Export a backup first if you want to keep your current data.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -408,7 +421,7 @@ private fun BackupAndRestoreSection(
                 ) {
                     OutlinedButton(
                         onClick = onExportClick,
-                        enabled = !isExporting && !isRestoring,
+                        enabled = !isExporting && !isRestoring && !hasPreview,
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp),
@@ -422,8 +435,8 @@ private fun BackupAndRestoreSection(
 
                     KanakPrimaryButton(
                         onClick = onRestoreClick,
-                        enabled = false,
-                        text = "Restore coming soon",
+                        enabled = !isExporting && !isRestoring && !hasPreview,
+                        text = if (isRestoring) "Reading backup..." else "Restore Backup",
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
@@ -437,6 +450,7 @@ private fun BackupAndRestoreSection(
 @Composable
 private fun RestoreConfirmationDialog(
     summary: BackupSummary,
+    isRestoring: Boolean,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -444,7 +458,7 @@ private fun RestoreConfirmationDialog(
     val exportDateStr = remember(summary.exportedAt) { dateFormat.format(Date(summary.exportedAt)) }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isRestoring) onDismiss() },
         title = {
             Text(
                 text = "Restore Backup?",
@@ -453,7 +467,7 @@ private fun RestoreConfirmationDialog(
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.medium)) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(KanakSpacing.medium)) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -463,7 +477,7 @@ private fun RestoreConfirmationDialog(
                         .padding(KanakSpacing.small)
                 ) {
                     Text(
-                        text = "⚠️ Warning: Restoring this backup will replace all current expenses with the backup data. This action cannot be undone.",
+                        text = "⚠️ Warning: Restoring this backup will replace all current expenses and currency/theme preferences with the backup data. This action cannot be undone.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
@@ -504,17 +518,18 @@ private fun RestoreConfirmationDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
+                enabled = !isRestoring,
                 colors = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.error,
                     contentColor = MaterialTheme.colorScheme.onError
                 ),
                 shape = RoundedCornerShape(KanakCornerRadius.medium)
             ) {
-                Text("Restore Data", fontWeight = FontWeight.Bold)
+                Text(if (isRestoring) "Restoring..." else "Replace & Restore", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isRestoring) {
                 Text("Cancel")
             }
         },
@@ -526,13 +541,14 @@ private fun RestoreConfirmationDialog(
 @Composable
 private fun BackupErrorDialog(
     errorMessage: String,
+    title: String = "Backup / Restore Error",
     onDismiss: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Backup / Restore Error",
+                text = title,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.error
@@ -611,7 +627,7 @@ private fun CurrencySelectionDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, enabled = !isRestoring) {
                 Text("Cancel")
             }
         },

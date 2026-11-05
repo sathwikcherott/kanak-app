@@ -19,6 +19,10 @@ interface UserPreferencesDataSource {
     suspend fun setThemePreference(theme: ThemePreference)
     val lastBackupExportedTime: Flow<Long?>
     suspend fun setLastBackupExportedTime(timestamp: Long)
+    // Production must apply both preferences in a single DataStore edit.
+    suspend fun restorePreferences(currency: String, theme: ThemePreference) {
+        throw UnsupportedOperationException("Atomic preference restoration is not configured")
+    }
 }
 
 class UserPreferencesRepository(private val context: Context) : UserPreferencesDataSource {
@@ -56,6 +60,13 @@ class UserPreferencesRepository(private val context: Context) : UserPreferencesD
 
     override val lastBackupExportedTime: Flow<Long?> = context.dataStore.data.map { preferences ->
         preferences[PreferenceKeys.LAST_BACKUP_EXPORTED_TIME]
+    }
+
+    override suspend fun restorePreferences(currency: String, theme: ThemePreference) {
+        context.dataStore.edit { preferences ->
+            preferences[PreferenceKeys.DEFAULT_CURRENCY] = currency
+            preferences[PreferenceKeys.THEME_PREFERENCE] = theme.name
+        }
     }
 
     override suspend fun setLastBackupExportedTime(timestamp: Long) {

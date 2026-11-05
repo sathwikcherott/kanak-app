@@ -3,38 +3,20 @@ package com.kanak.app.data.backup
 import android.content.Context
 import android.net.Uri
 import com.kanak.app.data.local.datastore.UserPreferencesDataSource
-import com.kanak.app.data.repository.ExpenseRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 class OfflineBackupRepository(
-    private val expenseRepository: ExpenseRepository,
+    private val persistence: BackupPersistence,
     private val userPreferencesDataSource: UserPreferencesDataSource
 ) : BackupRepository {
 
     override suspend fun createBackup(): KanakBackup = withContext(Dispatchers.IO) {
-        val expenses = expenseRepository.getAllExpenses().first()
-        val currency = expenseRepository.getDefaultCurrency().first()
-        val theme = expenseRepository.getThemePreference().first()
-
-        val backupExpenses = expenses.map { BackupExpense.fromDomainModel(it) }
-        val backupPrefs = BackupPreferences(
-            defaultCurrency = currency,
-            themePreference = theme
-        )
-
-        KanakBackup(
-            version = KanakBackup.CURRENT_BACKUP_VERSION,
-            exportedAt = System.currentTimeMillis(),
-            appVersion = "1.0",
-            preferences = backupPrefs,
-            expenses = backupExpenses
-        )
+        persistence.snapshotForBackup()
     }
 
     override suspend fun exportBackupToUri(context: Context, uri: Uri): Result<Unit> = withContext(Dispatchers.IO) {
@@ -72,10 +54,15 @@ class OfflineBackupRepository(
         }
     }
 
-    // Stage 1 provides export/validation only. Never expose unverified destructive replacement.
-    override suspend fun restoreBackup(backup: KanakBackup): Result<Unit> = Result.failure(
-        UnsupportedOperationException("Restore is not available in this build. Your current data has not been changed.")
-    )
+    override suspend fun restoreBackup(backup: KanakBackup): Result<RestoreOutcome> = withContext(Dispatchers.IO) {
+        try {
+            Result.success(persistence.restoreValidatedBackup(backup))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 
     override fun getLastBackupExportedTime(): Flow<Long?> {
         return userPreferencesDataSource.lastBackupExportedTime

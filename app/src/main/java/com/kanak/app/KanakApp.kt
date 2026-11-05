@@ -14,7 +14,7 @@ class KanakApp : Application() {
     val database by lazy { KanakDatabase.getDatabase(this) }
     val userPreferencesRepository by lazy { UserPreferencesRepository(this) }
     val voiceInputRepository: VoiceInputRepository by lazy { AndroidVoiceInputRepository(this) }
-    val expenseRepository: ExpenseRepository by lazy {
+    val expenseRepository: OfflineExpenseRepository by lazy {
         OfflineExpenseRepository(
             expenseDao = database.expenseDao(),
             userPreferencesDataSource = userPreferencesRepository,
@@ -24,7 +24,7 @@ class KanakApp : Application() {
     }
     val backupRepository: BackupRepository by lazy {
         OfflineBackupRepository(
-            expenseRepository = expenseRepository,
+            persistence = expenseRepository,
             userPreferencesDataSource = userPreferencesRepository
         )
     }
