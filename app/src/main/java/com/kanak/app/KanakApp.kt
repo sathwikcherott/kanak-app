@@ -5,7 +5,6 @@ import com.kanak.app.data.backup.BackupRepository
 import com.kanak.app.data.backup.OfflineBackupRepository
 import com.kanak.app.data.local.KanakDatabase
 import com.kanak.app.data.local.datastore.UserPreferencesRepository
-import com.kanak.app.data.repository.ExpenseRepository
 import com.kanak.app.data.repository.OfflineExpenseRepository
 import com.kanak.app.voice.AndroidVoiceInputRepository
 import com.kanak.app.voice.VoiceInputRepository

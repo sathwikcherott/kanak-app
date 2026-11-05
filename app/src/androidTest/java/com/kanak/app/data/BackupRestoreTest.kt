@@ -154,10 +154,13 @@ class BackupRestoreTest {
         withTimeout(5000) { entered.await() }
         val saving = async(Dispatchers.IO) { expenses.saveExpense(Expense(amountMinor = 500L)) }
         val snapshot = async(Dispatchers.IO) { backups.createBackup() }
-        delay(100)
-        assertFalse(saving.isCompleted)
-        assertFalse(snapshot.isCompleted)
-        finish.complete(Unit)
+        try {
+            delay(100)
+            assertFalse(saving.isCompleted)
+            assertFalse(snapshot.isCompleted)
+        } finally {
+            finish.complete(Unit)
+        }
         assertEquals(RestoreOutcome.COMPLETE, restore.await())
         saving.await()
         val data = snapshot.await()
@@ -180,9 +183,12 @@ class BackupRestoreTest {
         val first = async(Dispatchers.IO) { backups.restoreBackup(backup(record())).getOrThrow() }
         withTimeout(5000) { entered.await() }
         val second = launch(Dispatchers.IO) { backups.restoreBackup(backup(record(100L))) }
-        delay(100)
-        second.cancelAndJoin()
-        finish.complete(Unit)
+        try {
+            delay(100)
+            second.cancelAndJoin()
+        } finally {
+            finish.complete(Unit)
+        }
         first.await()
         assertEquals(listOf(record().toDomainModel()), expenses.getAllExpenses().first())
         expenses.saveExpense(Expense(amountMinor = 200L))
