@@ -5,4 +5,3 @@ enum class ThemePreference(val displayName: String) {
     DARK("Dark (AMOLED)"),
     LIGHT("Light")
 }
-
