@@ -12,12 +12,6 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "kanak_user_preferences")
 
-enum class ThemePreference(val displayName: String) {
-    SYSTEM("System Default"),
-    DARK("Dark (AMOLED)"),
-    LIGHT("Light")
-}
-
 interface UserPreferencesDataSource {
     val defaultCurrency: Flow<String>
     suspend fun setDefaultCurrency(currency: String)

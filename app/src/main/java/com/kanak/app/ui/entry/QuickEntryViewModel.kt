@@ -19,7 +19,6 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.ZoneOffset
 import kotlinx.coroutines.CancellationException
 import java.util.TimeZone
 
@@ -126,7 +125,7 @@ class QuickEntryViewModel(
             }
             ExpenseDateOption.CHOSEN_DATE -> {
                 _uiState.update {
-                    it.copy(showDatePicker = true, selectedDateMillis = resolveOccurredAt(it, now, timeZone))
+                    it.copy(showDatePicker = true, selectedDateMillis = ExpenseDateRules.resolveOccurredAt(it, now, timeZone))
                 }
             }
         }
@@ -241,7 +240,7 @@ class QuickEntryViewModel(
         }
 
         val nowAtSave = timeProvider()
-        val targetOccurredAt = resolveOccurredAt(currentState, nowAtSave, timeZone)
+        val targetOccurredAt = ExpenseDateRules.resolveOccurredAt(currentState, nowAtSave, timeZone)
 
         if (isDateInFuture(targetOccurredAt, { nowAtSave }, timeZone)) {
             _uiState.update { it.copy(dateError = "Future dates are not allowed") }
@@ -323,43 +322,22 @@ class QuickEntryViewModel(
             utcMillis: Long,
             timeProvider: () -> Long = { System.currentTimeMillis() },
             timeZone: TimeZone = TimeZone.getDefault()
-        ): Long {
-            val date = Instant.ofEpochMilli(utcMillis).atZone(ZoneOffset.UTC).toLocalDate()
-            val now = Instant.ofEpochMilli(timeProvider()).atZone(timeZone.toZoneId())
-            return date.atTime(now.toLocalTime()).atZone(timeZone.toZoneId()).toInstant().toEpochMilli()
-        }
+        ): Long = ExpenseDateRules.convertPickerUtcToLocalMillis(utcMillis, timeProvider, timeZone)
 
         fun localMillisToPickerUtc(millis: Long, timeZone: TimeZone = TimeZone.getDefault()): Long =
-            Instant.ofEpochMilli(millis).atZone(timeZone.toZoneId()).toLocalDate()
-                .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            ExpenseDateRules.localMillisToPickerUtc(millis, timeZone)
 
         fun isPickerDateSelectable(
             utcMillis: Long,
             nowMillis: Long = System.currentTimeMillis(),
             timeZone: TimeZone = TimeZone.getDefault()
-        ): Boolean = !Instant.ofEpochMilli(utcMillis).atZone(ZoneOffset.UTC).toLocalDate()
-            .isAfter(Instant.ofEpochMilli(nowMillis).atZone(timeZone.toZoneId()).toLocalDate())
+        ): Boolean = ExpenseDateRules.isPickerDateSelectable(utcMillis, nowMillis, timeZone)
 
         fun isDateInFuture(
             targetMillis: Long,
             timeProvider: () -> Long = { System.currentTimeMillis() },
             timeZone: TimeZone = TimeZone.getDefault()
-        ): Boolean = Instant.ofEpochMilli(targetMillis).atZone(timeZone.toZoneId()).toLocalDate()
-            .isAfter(Instant.ofEpochMilli(timeProvider()).atZone(timeZone.toZoneId()).toLocalDate())
-
-        private fun resolveOccurredAt(state: QuickEntryUiState, nowMillis: Long, timeZone: TimeZone): Long {
-            val zone = timeZone.toZoneId()
-            val now = Instant.ofEpochMilli(nowMillis).atZone(zone)
-            val date = when (state.selectedDateOption) {
-                ExpenseDateOption.TODAY -> return nowMillis
-                // Relative shortcuts remain relative if an open draft crosses midnight.
-                ExpenseDateOption.YESTERDAY -> now.toLocalDate().minusDays(1)
-                ExpenseDateOption.CHOSEN_DATE -> Instant.ofEpochMilli(state.selectedDateMillis)
-                    .atZone(zone).toLocalDate()
-            }
-            // java.time moves gap times forward and uses the earlier offset for overlaps.
-            return date.atTime(now.toLocalTime()).atZone(zone).toInstant().toEpochMilli()
-        }
+        ): Boolean = ExpenseDateRules.isDateInFuture(targetMillis, timeProvider, timeZone)
     }
 
     class Factory(
