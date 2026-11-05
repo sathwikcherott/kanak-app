@@ -81,6 +81,7 @@ fun QuickEntryScreen(
     onSaveClicked: () -> Unit,
     onClearUserMessage: () -> Unit,
     modifier: Modifier = Modifier,
+    autoStartVoice: Boolean = false,
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -106,6 +107,12 @@ fun QuickEntryScreen(
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
+    }
+
+    // Automatic voice entry uses the same permission path as the microphone button.
+    // The sheet host enables this only after the opening transition has completed.
+    LaunchedEffect(autoStartVoice) {
+        if (autoStartVoice) handleMicClick()
     }
 
     LaunchedEffect(uiState.userMessage) {

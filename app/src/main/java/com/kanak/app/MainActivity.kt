@@ -14,10 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +29,7 @@ import com.kanak.app.ui.dashboard.AnalyticsScreen
 import com.kanak.app.ui.dashboard.HomeScreen
 import com.kanak.app.ui.dashboard.HomeViewModel
 import com.kanak.app.ui.dashboard.TransactionsScreen
-import com.kanak.app.ui.entry.QuickEntryScreen
+import com.kanak.app.ui.entry.QuickEntrySheet
 import com.kanak.app.ui.entry.QuickEntryViewModel
 import com.kanak.app.ui.navigation.ExitConfirmationDialog
 import com.kanak.app.ui.navigation.KanakBottomNavigation
@@ -40,6 +37,8 @@ import com.kanak.app.ui.navigation.KanakTab
 import com.kanak.app.ui.settings.SettingsScreen
 import com.kanak.app.ui.settings.SettingsViewModel
 import com.kanak.app.ui.transactions.TransactionsViewModel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 
 class MainActivity : ComponentActivity() {
 
@@ -79,8 +78,22 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             var showExitDialog by remember { mutableStateOf(value = false) }
 
-            val homeUiState by homeViewModel.uiState.collectAsState()
-            val quickEntryUiState by quickEntryViewModel.uiState.collectAsState()
+            // Sheet visibility is navigation state, not dashboard content. Keep the
+            // dashboard's input object unchanged while the sheet opens and animates.
+            val homeContent = remember(homeViewModel) {
+                homeViewModel.uiState.map {
+                    it.copy(showQuickEntry = false, triggerVoiceOnEntry = false)
+                }.distinctUntilChanged()
+            }
+            val homeUiState by homeContent.collectAsState(
+                initial = homeViewModel.uiState.value.copy(showQuickEntry = false, triggerVoiceOnEntry = false)
+            )
+            val quickEntryVisibility = remember(homeViewModel) {
+                homeViewModel.uiState.map { it.showQuickEntry }.distinctUntilChanged()
+            }
+            val showQuickEntry by quickEntryVisibility.collectAsState(
+                initial = homeViewModel.uiState.value.showQuickEntry
+            )
             val transactionsUiState by transactionsViewModel.uiState.collectAsState()
             val analyticsUiState by analyticsViewModel.uiState.collectAsState()
             val settingsUiState by settingsViewModel.uiState.collectAsState()
@@ -92,7 +105,7 @@ class MainActivity : ComponentActivity() {
                 ThemePreference.LIGHT -> false
             }
 
-            BackHandler(enabled = !homeUiState.showQuickEntry) {
+            BackHandler(enabled = !showQuickEntry) {
                 if (showExitDialog) {
                     showExitDialog = false
                 } else if (homeUiState.activeTab != KanakTab.HOME) {
@@ -123,7 +136,6 @@ class MainActivity : ComponentActivity() {
                                 onAddExpenseClicked = { homeViewModel.openQuickEntry(triggerVoice = false) },
                                 onVoiceEntryClicked = {
                                     homeViewModel.openQuickEntry(triggerVoice = true)
-                                    quickEntryViewModel.onMicTapped()
                                 },
                                 onViewAllTransactionsClicked = { homeViewModel.selectTab(KanakTab.TRANSACTIONS) },
                                 modifier = Modifier.fillMaxSize()
@@ -169,39 +181,10 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    if (homeUiState.showQuickEntry) {
-                        ModalBottomSheet(
-                            onDismissRequest = {
-                                if (!quickEntryUiState.isSaving) {
-                                    quickEntryViewModel.discardDraft()
-                                    homeViewModel.closeQuickEntry()
-                                }
-                            },
-                            sheetState = rememberModalBottomSheetState(
-                                skipPartiallyExpanded = true,
-                                confirmValueChange = { it != SheetValue.Hidden || !quickEntryUiState.isSaving }
-                            )
-                        ) {
-                            QuickEntryScreen(
-                                uiState = quickEntryUiState,
-                                onAmountChanged = quickEntryViewModel::onAmountChanged,
-                                onCategorySelected = quickEntryViewModel::onCategorySelected,
-                                onNoteChanged = quickEntryViewModel::onNoteChanged,
-                                onDateOptionSelected = quickEntryViewModel::onDateOptionSelected,
-                                onDateChosenFromPicker = quickEntryViewModel::onDateChosenFromPicker,
-                                onDismissDatePicker = quickEntryViewModel::onDismissDatePicker,
-                                onMicTapped = quickEntryViewModel::onMicTapped,
-                                onVoicePermissionDenied = quickEntryViewModel::onVoicePermissionDenied,
-                                onSaveClicked = {
-                                    quickEntryViewModel.saveExpense {
-                                        homeViewModel.closeQuickEntry()
-                                    }
-                                },
-                                onClearUserMessage = quickEntryViewModel::clearUserMessage,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    }
+                    QuickEntrySheet(
+                        homeViewModel = homeViewModel,
+                        entryViewModel = quickEntryViewModel
+                    )
 
                     if (showExitDialog) {
                         ExitConfirmationDialog(
