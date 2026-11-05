@@ -8,8 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 class OfflineBackupRepository(
     private val expenseRepository: ExpenseRepository,
@@ -40,12 +41,16 @@ class OfflineBackupRepository(
         try {
             val backup = createBackup()
             val jsonString = KanakBackupSerializer.toJson(backup)
+            // Do not report a successful export for a file our validator cannot restore.
+            KanakBackupSerializer.fromJson(jsonString)
             context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                 outputStream.write(jsonString.toByteArray(Charsets.UTF_8))
             } ?: return@withContext Result.failure(BackupException.FileReadError("Unable to open output stream for URI"))
 
             recordBackupExportedTime(backup.exportedAt)
             Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -53,29 +58,24 @@ class OfflineBackupRepository(
 
     override suspend fun parseAndValidateBackupFromUri(context: Context, uri: Uri): Result<BackupSummary> = withContext(Dispatchers.IO) {
         try {
-            val jsonString = context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).readText()
+            val coroutineContext = currentCoroutineContext()
+            val backup = context.contentResolver.openInputStream(uri)?.use {
+                KanakBackupSerializer.fromInputStream(it) { coroutineContext.ensureActive() }
             } ?: return@withContext Result.failure(BackupException.FileReadError("Unable to open input stream for URI"))
 
-            val backup = KanakBackupSerializer.fromJson(jsonString)
             val summary = KanakBackupSerializer.summarize(backup)
             Result.success(summary)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    override suspend fun restoreBackup(backup: KanakBackup): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            val domainExpenses = backup.expenses.map { it.toDomainModel() }
-            expenseRepository.replaceAllExpensesInTransaction(domainExpenses)
-            expenseRepository.setDefaultCurrency(backup.preferences.defaultCurrency)
-            expenseRepository.setThemePreference(backup.preferences.themePreference)
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
+    // Stage 1 provides export/validation only. Never expose unverified destructive replacement.
+    override suspend fun restoreBackup(backup: KanakBackup): Result<Unit> = Result.failure(
+        UnsupportedOperationException("Restore is not available in this build. Your current data has not been changed.")
+    )
 
     override fun getLastBackupExportedTime(): Flow<Long?> {
         return userPreferencesDataSource.lastBackupExportedTime

@@ -76,16 +76,10 @@ class OfflineExpenseRepository(
 
     override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) = withContext(Dispatchers.IO) {
         val entities = expenses.map { it.toEntity() }
-        val db = database
-        if (db != null) {
-            db.runInTransaction {
-                expenseDao.deleteAllExpenses()
-                aiEnrichmentJobDao?.deleteAllJobs()
-                expenseDao.insertExpenses(entities)
-            }
-        } else {
-            expenseDao.deleteAllExpenses()
+        val db = checkNotNull(database) { "Database required for atomic replacement" }
+        db.runInTransaction {
             aiEnrichmentJobDao?.deleteAllJobs()
+            expenseDao.deleteAllExpenses()
             expenseDao.insertExpenses(entities)
         }
     }

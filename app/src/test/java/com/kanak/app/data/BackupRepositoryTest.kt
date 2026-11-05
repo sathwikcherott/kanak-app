@@ -18,6 +18,92 @@ import org.junit.Test
 
 class BackupRepositoryTest {
 
+    private fun validJson(): String = KanakBackupSerializer.toJson(KanakBackup(
+        exportedAt = 1000L,
+        expenses = listOf(BackupExpense(1L, 100L, "INR", 1000L, note = "note"))
+    ))
+
+    private fun rejects(json: String) {
+        try {
+            KanakBackupSerializer.fromJson(json)
+            fail("Expected invalid backup to be rejected")
+        } catch (_: BackupException) { }
+    }
+
+    @Test fun schemaVersionCannotWrapToSupportedInteger() {
+        rejects(validJson().replace("\"version\": 1", "\"version\": 4294967297"))
+    }
+
+    @Test fun malformedNumberGrammarIsRejected() {
+        for (number in listOf("01", "1.", "1e", "--1", "+1")) {
+            rejects(validJson().replace("\"amountMinor\": 100", "\"amountMinor\": $number"))
+        }
+    }
+
+    @Test fun fractionalExponentAndOverflowMoneyAreRejectedWithoutCoercion() {
+        for (number in listOf("1.0", "1e2", "9223372036854775808")) {
+            rejects(validJson().replace("\"amountMinor\": 100", "\"amountMinor\": $number"))
+        }
+        val max = KanakBackupSerializer.fromJson(validJson().replace(
+            "\"amountMinor\": 100", "\"amountMinor\": ${Long.MAX_VALUE}"))
+        assertEquals(Long.MAX_VALUE, max.expenses.single().amountMinor)
+    }
+
+    @Test fun invalidNullableFieldTypesAreNotSilentlyDropped() {
+        rejects(validJson().replace("\"note\": \"note\"", "\"note\": 123"))
+        rejects(validJson().replace("\"category\": null", "\"category\": true"))
+    }
+
+    @Test fun allControlCharactersRoundTripAndRawControlsAreRejected() {
+        val note = (0..31).map { it.toChar() }.joinToString("")
+        val backup = KanakBackup(expenses = listOf(BackupExpense(1L, 1L, "INR", 1000L, note)))
+        assertEquals(note, KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup)).expenses.single().note)
+        rejects(validJson().replace("note\"", "no\u0001te\""))
+        rejects(validJson().replace("{\n", "{\u00a0"))
+    }
+
+    @Test fun currencyAndExportTimestampAreValidated() {
+        rejects(validJson().replace("INR", "NOT_A_CURRENCY"))
+        rejects(validJson().replace("\"exportedAt\": 1000", "\"exportedAt\": 0"))
+        rejects(validJson().replace("\"appVersion\": \"1.0\"", "\"appVersion\": false"))
+    }
+
+    @Test fun unknownStateIsRejected() {
+        rejects(validJson().replace("CONFIRMED", "UNKNOWN_STATE"))
+    }
+
+    @Test fun excessiveNestingFailsWithoutStackOverflow() {
+        val nested = "[".repeat(1000) + "0" + "]".repeat(1000)
+        try {
+            KanakBackupSerializer.fromJson(validJson().dropLast(1) + ",\"extra\":" + nested + "}")
+            fail("Expected nesting limit")
+        } catch (_: BackupException.LimitExceeded) { }
+    }
+
+    @Test fun streamByteLimitIsCheckedBeforeFullRead() {
+        var read = 0L
+        val endless = object : java.io.InputStream() {
+            override fun read(): Int { read++; return 32 }
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int {
+                bytes.fill(32.toByte(), offset, offset + length)
+                read += length
+                return length
+            }
+        }
+        try {
+            KanakBackupSerializer.fromInputStream(endless)
+            fail("Expected byte limit")
+        } catch (_: BackupException.LimitExceeded) { }
+        assertEquals(KanakBackup.MAX_BACKUP_BYTES + 1, read)
+    }
+
+    @Test fun streamRejectsMalformedUtf8() {
+        try {
+            KanakBackupSerializer.fromInputStream(byteArrayOf(0xC3.toByte(), 0x28).inputStream())
+            fail("Expected UTF-8 rejection")
+        } catch (_: BackupException.CorruptedJson) { }
+    }
+
     @Test
     fun exactSerializationAndDeserialization_roundTripEquality() {
         val original = KanakBackup(
@@ -426,7 +512,7 @@ class BackupRepositoryTest {
             KanakBackupSerializer.fromJson(unsupportedVersionJson)
             fail("Should reject version 2")
         } catch (e: BackupException.UnsupportedSchemaVersion) {
-            assertEquals(2, e.version)
+            assertEquals(2L, e.version)
         }
     }
 

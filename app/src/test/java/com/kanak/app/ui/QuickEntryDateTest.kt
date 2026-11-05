@@ -4,6 +4,10 @@ import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.data.local.entity.AiEnrichmentJobEntity
 import com.kanak.app.data.repository.ExpenseRepository
 import com.kanak.app.model.Expense
+import com.kanak.app.model.EntrySource
+import com.kanak.app.voice.VoiceInputRepository
+import com.kanak.app.voice.VoiceInputError
+import org.junit.Assert.assertTrue
 import com.kanak.app.model.ExpenseCategory
 import com.kanak.app.ui.dashboard.HomeViewModel
 import com.kanak.app.ui.entry.ExpenseDateOption
@@ -280,15 +284,18 @@ class QuickEntryDateTest {
         }
         assertEquals(23, yesterdayCal.get(Calendar.DAY_OF_MONTH))
 
-        // 2. Select Yesterday again, then simulate voice draft update
-        viewModel.onDateOptionSelected(ExpenseDateOption.YESTERDAY)
-        viewModel.onAmountChanged("50.00")
-        viewModel.onCategorySelected(ExpenseCategory.TRANSPORT)
-        viewModel.saveExpense()
+        // 2. Exercise the real recognizer callback and shared save path.
+        val voiceViewModel = QuickEntryViewModel(fakeRepository, FakeVoiceRepository(),
+            { nowCal.timeInMillis }, TimeZone.getTimeZone("UTC"))
+        voiceViewModel.onDateOptionSelected(ExpenseDateOption.YESTERDAY)
+        voiceViewModel.onMicTapped()
+        assertEquals(EntrySource.VOICE, voiceViewModel.uiState.value.source)
+        voiceViewModel.saveExpense()
         testDispatcher.scheduler.advanceUntilIdle()
 
         assertEquals(2, fakeRepository.savedExpenses.size)
         val savedVoice = fakeRepository.savedExpenses[1]
+        assertEquals(EntrySource.VOICE, savedVoice.source)
 
         val savedVoiceCal = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
             timeInMillis = savedVoice.occurredAt
@@ -353,7 +360,86 @@ class QuickEntryDateTest {
         assertEquals(expectedMonthTotal, homeState.currentMonthTotalMinor)
     }
 
+    private fun instant(text: String): Long = java.time.Instant.parse(text).toEpochMilli()
+
+    @Test fun pickerPreselectionUsesLocalCalendarDateNearMidnight() {
+        val zone = TimeZone.getTimeZone("Asia/Kolkata")
+        assertEquals(instant("2026-11-06T00:00:00Z"), QuickEntryViewModel.localMillisToPickerUtc(
+            instant("2026-11-05T19:00:00Z"), zone))
+    }
+
+    @Test fun pickerFutureLimitUsesLocalTodayInBothOffsetDirections() {
+        val now = instant("2026-11-05T19:00:00Z")
+        assertTrue(QuickEntryViewModel.isPickerDateSelectable(
+            instant("2026-11-06T00:00:00Z"), now, TimeZone.getTimeZone("Asia/Kolkata")))
+        assertFalse(QuickEntryViewModel.isPickerDateSelectable(
+            instant("2026-11-06T00:00:00Z"), now, TimeZone.getTimeZone("America/New_York")))
+    }
+
+    @Test fun yesterdayResolvesAtSaveAfterDraftCrossesMidnight() = runTest {
+        var now = instant("2026-11-05T23:59:00Z")
+        val vm = QuickEntryViewModel(fakeRepository, timeProvider = { now }, timeZone = TimeZone.getTimeZone("UTC"))
+        vm.onDateOptionSelected(ExpenseDateOption.YESTERDAY)
+        vm.onAmountChanged("10")
+        now = instant("2026-11-06T00:01:00Z")
+        vm.saveExpense()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(instant("2026-11-05T00:01:00Z"), fakeRepository.savedExpenses.single().occurredAt)
+    }
+
+    @Test fun chosenDateIsFixedButUsesTimeAtSave() = runTest {
+        var now = instant("2026-11-06T12:00:00Z")
+        val vm = QuickEntryViewModel(fakeRepository, timeProvider = { now }, timeZone = TimeZone.getTimeZone("UTC"))
+        vm.onDateChosenFromPicker(instant("2026-10-15T00:00:00Z"))
+        vm.onAmountChanged("10")
+        now = instant("2026-11-07T13:30:00Z")
+        vm.saveExpense()
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertEquals(instant("2026-10-15T13:30:00Z"), fakeRepository.savedExpenses.single().occurredAt)
+    }
+
+    @Test fun failedRepositorySavePreservesDraftAndDoesNotCloseSheet() = runTest {
+        fakeRepository.failSave = true
+        var closed = false
+        val vm = QuickEntryViewModel(fakeRepository)
+        vm.onDateOptionSelected(ExpenseDateOption.YESTERDAY)
+        vm.onAmountChanged("10")
+        vm.saveExpense { closed = true }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertFalse(closed)
+        assertFalse(vm.uiState.value.isSaving)
+        assertEquals("10", vm.uiState.value.amountText)
+        assertEquals(ExpenseDateOption.YESTERDAY, vm.uiState.value.selectedDateOption)
+        fakeRepository.failSave = false
+        vm.saveExpense { closed = true }
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(closed)
+    }
+
+    @Test fun discardingDraftResetsDateAndContent() = runTest {
+        val vm = QuickEntryViewModel(fakeRepository)
+        vm.onDateOptionSelected(ExpenseDateOption.YESTERDAY)
+        vm.onAmountChanged("10")
+        vm.onNoteChanged("Gift for Swathi")
+        vm.discardDraft()
+        assertEquals(ExpenseDateOption.TODAY, vm.uiState.value.selectedDateOption)
+        assertEquals("", vm.uiState.value.amountText)
+        assertEquals("", vm.uiState.value.note)
+        assertNull(vm.uiState.value.selectedCategory)
+    }
+
+    private class FakeVoiceRepository : VoiceInputRepository {
+        override val isAvailable = true
+        override val isListening = MutableStateFlow(false)
+        override fun startListening(onResult: (String) -> Unit, onError: (VoiceInputError) -> Unit) {
+            onResult("50 bus ticket")
+        }
+        override fun stopListening() { }
+        override fun destroy() { }
+    }
+
     private class FakeExpenseRepository : ExpenseRepository {
+        var failSave = false
         val savedExpenses = mutableListOf<Expense>()
         val expensesFlow = MutableStateFlow<List<Expense>>(emptyList())
         private val currencyFlow = MutableStateFlow("INR")
@@ -366,6 +452,7 @@ class QuickEntryDateTest {
         override fun getAllExpenses(): Flow<List<Expense>> = expensesFlow
         override fun getExpenseById(id: Long): Flow<Expense?> = flowOf(null)
         override suspend fun saveExpense(expense: Expense): Long {
+            check(!failSave) { "Simulated storage failure" }
             savedExpenses.add(expense)
             expensesFlow.value = expensesFlow.value + expense
             return savedExpenses.size.toLong()

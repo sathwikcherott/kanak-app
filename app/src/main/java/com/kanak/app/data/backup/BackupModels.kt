@@ -9,7 +9,7 @@ import com.kanak.app.model.ExpenseCategory
 sealed class BackupException(message: String) : Exception(message) {
     class CorruptedJson(message: String) : BackupException(message)
     class InvalidFormat(message: String) : BackupException(message)
-    class UnsupportedSchemaVersion(val version: Int) : BackupException("Unsupported backup schema version: $version")
+    class UnsupportedSchemaVersion(val version: Long) : BackupException("Unsupported backup schema version: $version")
     class DuplicateExpenseIds(message: String) : BackupException(message)
     class InvalidMonetaryValue(message: String) : BackupException(message)
     class MissingRequiredField(message: String) : BackupException(message)
@@ -69,7 +69,7 @@ data class KanakBackup(
     companion object {
         const val FORMAT_IDENTIFIER = "kanak_backup"
         const val CURRENT_BACKUP_VERSION = 1
-        const val MAX_BACKUP_BYTES = 50 * 1024 * 1024L // 50 MB
+        const val MAX_BACKUP_BYTES = 10 * 1024 * 1024L // 10 MiB; enforced before decoding file bytes
         const val MAX_EXPENSE_RECORDS = 50_000
     }
 }
