@@ -94,6 +94,19 @@ class BackupRestoreTest {
         assertEquals(0, prefs.restoreCalls)
     }
 
+    @Test fun failedQueueInsertionRollsBackNewExpenseSave() = runBlocking {
+        db.openHelper.writableDatabase.execSQL("""
+            CREATE TRIGGER fail_job BEFORE INSERT ON ai_enrichment_jobs
+            BEGIN SELECT RAISE(ABORT, 'Injected queue failure'); END
+        """.trimIndent())
+        try {
+            expenses.saveExpense(Expense(amountMinor = 500L))
+            fail("Save must fail if its queue insert fails")
+        } catch (_: android.database.sqlite.SQLiteException) {
+            assertTrue(expenses.getAllExpenses().first().isEmpty())
+        }
+    }
+
     @Test fun emptyBackupIsAnExplicitValidReplacement() = runBlocking {
         val id = expenses.saveExpense(Expense(amountMinor = 100L))
         assertTrue(backups.restoreBackup(backup()).isSuccess)
@@ -160,14 +173,54 @@ class BackupRestoreTest {
         assertFalse(KanakBackupSerializer.toJson(snapshot).contains("ai_enrichment_jobs"))
     }
 
-    @Test fun cancellationBeforeReplacementPreservesDataAndReleasesLock() = runBlocking {
-        expenses.saveExpense(Expense(amountMinor = 100L))
-        val before = expenses.getAllExpenses().first()
-        val job = launch(start = CoroutineStart.LAZY) { backups.restoreBackup(backup(record())) }
-        job.cancelAndJoin()
-        assertEquals(before, expenses.getAllExpenses().first())
+    @Test fun cancellationWhileWaitingForRestoreLockNeverAppliesSecondBackup() = runBlocking {
+        val entered = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        prefs.beforeRestore = { entered.complete(Unit); finish.await() }
+        val first = async(Dispatchers.IO) { backups.restoreBackup(backup(record())).getOrThrow() }
+        withTimeout(5000) { entered.await() }
+        val second = launch(Dispatchers.IO) { backups.restoreBackup(backup(record(100L))) }
+        delay(100)
+        second.cancelAndJoin()
+        finish.complete(Unit)
+        first.await()
+        assertEquals(listOf(record().toDomainModel()), expenses.getAllExpenses().first())
         expenses.saveExpense(Expense(amountMinor = 200L))
         assertEquals(2, expenses.getAllExpenses().first().size)
+    }
+
+    @Test fun fileExportPreviewAndRestoreUseSameValidatedDataEvenIfFileChanges() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = java.io.File.createTempFile("kanak-backup-", ".json", context.cacheDir)
+        try {
+            val uri = android.net.Uri.fromFile(file)
+            expenses.saveExpense(record().toDomainModel())
+            backups.exportBackupToUri(context, uri).getOrThrow()
+            expenses.saveExpense(Expense(amountMinor = 500L))
+            val before = expenses.getAllExpenses().first()
+            val summary = backups.parseAndValidateBackupFromUri(context, uri).getOrThrow()
+            assertEquals(1, summary.totalExpenses)
+            assertEquals(before, expenses.getAllExpenses().first()) // Preview is read-only.
+            file.writeText("not the original backup anymore")
+            backups.restoreBackup(summary.backup).getOrThrow()
+            assertEquals(listOf(record().toDomainModel()), expenses.getAllExpenses().first())
+        } finally { file.delete() }
+    }
+
+    @Test fun corruptedAndMissingFilesNeverTouchCurrentData() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = java.io.File.createTempFile("kanak-invalid-", ".json", context.cacheDir)
+        try {
+            expenses.saveExpense(Expense(amountMinor = 400L))
+            val before = expenses.getAllExpenses().first()
+            file.writeText("{broken")
+            val uri = android.net.Uri.fromFile(file)
+            assertTrue(backups.parseAndValidateBackupFromUri(context, uri).isFailure)
+            file.delete()
+            assertTrue(backups.parseAndValidateBackupFromUri(context, uri).isFailure)
+            assertEquals(before, expenses.getAllExpenses().first())
+            assertEquals(0, prefs.restoreCalls)
+        } finally { file.delete() }
     }
 
     private class Preferences : UserPreferencesDataSource {

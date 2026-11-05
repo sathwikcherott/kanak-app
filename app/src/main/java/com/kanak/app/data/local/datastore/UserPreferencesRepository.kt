@@ -25,7 +25,8 @@ interface UserPreferencesDataSource {
     }
 }
 
-class UserPreferencesRepository(private val context: Context) : UserPreferencesDataSource {
+class UserPreferencesRepository(private val dataStore: DataStore<Preferences>) : UserPreferencesDataSource {
+    constructor(context: Context) : this(context.dataStore)
 
     private object PreferenceKeys {
         val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
@@ -33,17 +34,17 @@ class UserPreferencesRepository(private val context: Context) : UserPreferencesD
         val LAST_BACKUP_EXPORTED_TIME = longPreferencesKey("last_backup_exported_time")
     }
 
-    override val defaultCurrency: Flow<String> = context.dataStore.data.map { preferences ->
+    override val defaultCurrency: Flow<String> = dataStore.data.map { preferences ->
         preferences[PreferenceKeys.DEFAULT_CURRENCY] ?: "INR"
     }
 
     override suspend fun setDefaultCurrency(currency: String) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferenceKeys.DEFAULT_CURRENCY] = currency
         }
     }
 
-    override val themePreference: Flow<ThemePreference> = context.dataStore.data.map { preferences ->
+    override val themePreference: Flow<ThemePreference> = dataStore.data.map { preferences ->
         val raw = preferences[PreferenceKeys.THEME_PREFERENCE]
         try {
             if (raw != null) ThemePreference.valueOf(raw) else ThemePreference.DARK
@@ -53,24 +54,24 @@ class UserPreferencesRepository(private val context: Context) : UserPreferencesD
     }
 
     override suspend fun setThemePreference(theme: ThemePreference) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferenceKeys.THEME_PREFERENCE] = theme.name
         }
     }
 
-    override val lastBackupExportedTime: Flow<Long?> = context.dataStore.data.map { preferences ->
+    override val lastBackupExportedTime: Flow<Long?> = dataStore.data.map { preferences ->
         preferences[PreferenceKeys.LAST_BACKUP_EXPORTED_TIME]
     }
 
     override suspend fun restorePreferences(currency: String, theme: ThemePreference) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferenceKeys.DEFAULT_CURRENCY] = currency
             preferences[PreferenceKeys.THEME_PREFERENCE] = theme.name
         }
     }
 
     override suspend fun setLastBackupExportedTime(timestamp: Long) {
-        context.dataStore.edit { preferences ->
+        dataStore.edit { preferences ->
             preferences[PreferenceKeys.LAST_BACKUP_EXPORTED_TIME] = timestamp
         }
     }
