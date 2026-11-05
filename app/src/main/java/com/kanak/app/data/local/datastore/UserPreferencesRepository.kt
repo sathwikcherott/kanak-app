@@ -19,6 +19,10 @@ interface UserPreferencesDataSource {
     suspend fun setThemePreference(theme: ThemePreference)
     val lastBackupExportedTime: Flow<Long?>
     suspend fun setLastBackupExportedTime(timestamp: Long)
+    val backupFolderUri: Flow<String?> get() = kotlinx.coroutines.flow.flowOf(null)
+    suspend fun setBackupFolderUri(uri: String) {
+        throw UnsupportedOperationException("Backup folder preference is not configured")
+    }
     // Production must apply both preferences in a single DataStore edit.
     suspend fun restorePreferences(currency: String, theme: ThemePreference) {
         throw UnsupportedOperationException("Atomic preference restoration is not configured")
@@ -29,9 +33,16 @@ class UserPreferencesRepository(private val dataStore: DataStore<Preferences>) :
     constructor(context: Context) : this(context.dataStore)
 
     private object PreferenceKeys {
+        val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
         val DEFAULT_CURRENCY = stringPreferencesKey("default_currency")
         val THEME_PREFERENCE = stringPreferencesKey("theme_preference")
         val LAST_BACKUP_EXPORTED_TIME = longPreferencesKey("last_backup_exported_time")
+    }
+
+    override val backupFolderUri: Flow<String?> = dataStore.data.map { it[PreferenceKeys.BACKUP_FOLDER_URI] }
+
+    override suspend fun setBackupFolderUri(uri: String) {
+        dataStore.edit { it[PreferenceKeys.BACKUP_FOLDER_URI] = uri }
     }
 
     override val defaultCurrency: Flow<String> = dataStore.data.map { preferences ->
