@@ -21,7 +21,9 @@ jobs:
           packages: platform-tools
           log-accepted-android-sdk-licenses: false
       - name: Install compile SDK
-        run: sdkmanager 'platforms;android-37'
+        run: |
+          sdkmanager --list --channel=3
+          sdkmanager 'platforms;android-37' --channel=3
       - name: Unit tests and debug APK
         run: bash gradlew testDebugUnitTest assembleDebug --no-daemon --stacktrace
       - name: Upload test reports
