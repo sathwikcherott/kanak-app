@@ -52,6 +52,11 @@ class CustomCategoryTest {
         val backup = KanakBackup(expenses = listOf(BackupExpense(1, 100, "INR", 1000, category = category())))
         try { KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup)); fail("Expected dangling reference") } catch (_: BackupException) { }
     }
+    @Test fun versionOneCannotHideAProvidedCustomCatalog() {
+        val json = KanakBackupSerializer.toJson(KanakBackup(customCategories = listOf(category())))
+            .replace("\"version\": 2", "\"version\": 1")
+        try { KanakBackupSerializer.fromJson(json); fail("Expected version guard") } catch (_: BackupException.InvalidFormat) { }
+    }
     @Test fun duplicateCustomIdsAndNormalizedNamesAreRejected() {
         val sameName = ExpenseCategory.custom("custom:22222222-1234-1234-1234-123456789012", "PET CARE")
         for (categories in listOf(listOf(category(), category()), listOf(category(), sameName))) {

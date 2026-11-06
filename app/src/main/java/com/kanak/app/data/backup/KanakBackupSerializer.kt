@@ -135,6 +135,9 @@ object KanakBackupSerializer {
             themePreference = themePreference,
         )
 
+        if (version == 1 && rootMap.containsKey("customCategories")) {
+            throw BackupException.InvalidFormat("Version 1 cannot contain a custom category catalog")
+        }
         val customCategories = if (version >= 2) {
             val rows = rootMap["customCategories"] as? List<*>
                 ?: throw BackupException.MissingRequiredField("Missing customCategories in version 2 backup")
@@ -331,12 +334,6 @@ private class SimpleJsonParser(private val json: String) {
             throw BackupException.CorruptedJson("Expected double-quoted string at position $index")
         }
         index++
-        if (backup.customCategories.size > ExpenseCategory.MAX_CUSTOM_CATEGORIES) {
-            throw BackupException.LimitExceeded("Too many custom categories")
-        }
-        if (backup.version == 1 && (backup.customCategories.isNotEmpty() || backup.expenses.any { it.category?.isCustom == true })) {
-            throw BackupException.InvalidFormat("Version 1 cannot contain custom categories")
-        }
         val sb = StringBuilder()
         while (index < len) {
             val c = json[index++]

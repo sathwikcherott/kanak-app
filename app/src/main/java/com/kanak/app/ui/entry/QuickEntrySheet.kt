@@ -56,7 +56,7 @@ fun QuickEntrySheet(homeViewModel: HomeViewModel, entryViewModel: QuickEntryView
 
     ModalBottomSheet(
         onDismissRequest = {
-            if (!isSaving) {
+            if (!entryViewModel.uiState.value.isSaving && !entryViewModel.uiState.value.isCreatingCategory) {
                 entryViewModel.discardDraft()
                 homeViewModel.closeQuickEntry()
             }
