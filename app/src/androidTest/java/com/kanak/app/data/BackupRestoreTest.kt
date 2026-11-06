@@ -84,7 +84,7 @@ class BackupRestoreTest {
         val invalid = listOf(
             backup(record().copy(amountMinor = -1L)),
             backup(record(), record()),
-            backup(record()).copy(version = 2),
+            backup(record()).copy(version = 3),
             backup(record().copy(currency = "bad"))
         )
         for (data in invalid) {

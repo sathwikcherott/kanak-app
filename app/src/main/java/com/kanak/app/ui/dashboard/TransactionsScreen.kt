@@ -140,6 +140,7 @@ fun TransactionsScreen(
 
                 item {
                     FilterSection(
+                        categories = uiState.availableCategories,
                         selectedDateFilter = uiState.selectedDateFilter,
                         onDateFilterSelected = onDateFilterSelected,
                         selectedCategoryFilter = uiState.selectedCategoryFilter,
@@ -322,6 +323,7 @@ private fun TransactionsSearchInput(
 
 @Composable
 private fun FilterSection(
+    categories: List<ExpenseCategory>,
     selectedDateFilter: DateRangeFilter,
     onDateFilterSelected: (DateRangeFilter) -> Unit,
     selectedCategoryFilter: ExpenseCategory?,
@@ -393,7 +395,7 @@ private fun FilterSection(
                 )
             }
 
-            ExpenseCategory.entries.forEach { cat ->
+            categories.forEach { cat ->
                 val selected = cat == selectedCategoryFilter
                 val shape = RoundedCornerShape(KanakCornerRadius.pill)
                 val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
@@ -685,7 +687,7 @@ private fun EditTransactionSheet(
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(KanakSpacing.small)
                 ) {
-                    ExpenseCategory.entries.forEach { cat ->
+                    uiState.availableCategories.forEach { cat ->
                         KanakCategoryCard(
                             category = cat,
                             selected = uiState.editCategory == cat,

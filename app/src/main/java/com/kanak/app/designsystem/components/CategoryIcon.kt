@@ -128,7 +128,7 @@ fun CategoryIcon(
                 drawLine(tint, Offset(w * 0.3f, h * 0.5f), Offset(w * 0.3f, h * 0.75f), strokeWidth = strokeWidth)
                 drawLine(tint, Offset(w * 0.7f, h * 0.5f), Offset(w * 0.7f, h * 0.75f), strokeWidth = strokeWidth)
             }
-            ExpenseCategory.OTHER -> {
+            else -> {
                 drawCircle(tint, radius = w * 0.07f, center = Offset(w * 0.25f, h * 0.5f))
                 drawCircle(tint, radius = w * 0.07f, center = Offset(w * 0.5f, h * 0.5f))
                 drawCircle(tint, radius = w * 0.07f, center = Offset(w * 0.75f, h * 0.5f))

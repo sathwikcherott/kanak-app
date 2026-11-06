@@ -35,7 +35,7 @@ fun QuickEntrySheet(homeViewModel: HomeViewModel, entryViewModel: QuickEntryView
     val entryState by entryViewModel.uiState.collectAsState()
     // Read the latest value in the transition callback without recreating sheet state
     // as saving starts/stops or as input changes.
-    val isSaving by rememberUpdatedState(entryState.isSaving)
+    val isSaving by rememberUpdatedState(entryState.isSaving || entryState.isCreatingCategory)
     val confirmSheetChange = remember {
         { target: SheetValue -> target != SheetValue.Hidden || !isSaving }
     }
@@ -76,7 +76,11 @@ fun QuickEntrySheet(homeViewModel: HomeViewModel, entryViewModel: QuickEntryView
             onSaveClicked = { entryViewModel.saveExpense { homeViewModel.closeQuickEntry() } },
             onClearUserMessage = entryViewModel::clearUserMessage,
             modifier = Modifier.fillMaxSize(),
-            autoStartVoice = startVoice
+            autoStartVoice = startVoice,
+            onOpenNewCategory = entryViewModel::openNewCategoryDialog,
+            onNewCategoryNameChanged = entryViewModel::onNewCategoryNameChanged,
+            onCreateCategory = entryViewModel::createCategory,
+            onCancelNewCategory = entryViewModel::cancelNewCategory
         )
     }
 }

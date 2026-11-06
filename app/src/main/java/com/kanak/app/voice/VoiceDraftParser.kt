@@ -17,7 +17,7 @@ object VoiceDraftParser {
     /**
      * Infer category from transcript/description with priority precedence.
      */
-    fun inferCategory(text: String?): ExpenseCategory? {
+    fun inferCategory(text: String?, customCategories: List<ExpenseCategory> = emptyList()): ExpenseCategory? {
         if (text.isNullOrBlank()) return null
         val lower = text.lowercase()
 
@@ -112,10 +112,13 @@ object VoiceDraftParser {
             return ExpenseCategory.EDUCATION
         }
 
-        return null
+        val customMatches = customCategories.filter { category ->
+            Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(category.displayName) + "(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE).containsMatchIn(text)
+        }
+        return customMatches.singleOrNull()
     }
 
-    fun parseTranscript(transcript: String): VoiceDraft {
+    fun parseTranscript(transcript: String, customCategories: List<ExpenseCategory> = emptyList()): VoiceDraft {
         val trimmed = transcript.trim()
         if (trimmed.isEmpty()) return VoiceDraft(amountText = "", category = null, note = "")
 
@@ -123,7 +126,7 @@ object VoiceDraftParser {
         val match = amountRegex.find(trimmed)
         val amountText = match?.groupValues?.get(1)?.replace(",", ".") ?: ""
 
-        val category = inferCategory(trimmed)
+        val category = inferCategory(trimmed, customCategories)
 
         return VoiceDraft(
             amountText = amountText,
