@@ -91,6 +91,7 @@ class InputLatencyTest {
             }
         } finally { compose.runOnUiThread { window.callback = original } }
         val output = JSONObject()
+            .put("run_id", InstrumentationRegistry.getArguments().getString("kanakLatencyRunId", "ci"))
             .put("device", android.os.Build.MODEL)
             .put("sdk", android.os.Build.VERSION.SDK_INT)
             .put("build_type", "debug")

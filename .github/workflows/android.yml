@@ -90,6 +90,7 @@ jobs:
         run: |
           mkdir -p app/build/reports
           adb logcat -d -s KANAK_INPUT_TIMING:I '*:S' > app/build/reports/input-latency.log
+          python3 scripts/summarize-input-latency.py app/build/reports/input-latency.log > app/build/reports/input-latency-summary.txt
       - name: Upload device reports
         if: always()
         uses: actions/upload-artifact@v5
@@ -98,6 +99,7 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/reports/input-latency.log
+            app/build/reports/input-latency-summary.txt
             app/build/outputs/androidTest-results/
             /tmp/kanak-emulator.log
           if-no-files-found: ignore
