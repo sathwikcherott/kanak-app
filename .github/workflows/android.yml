@@ -85,6 +85,11 @@ jobs:
           exit 1
       - name: Execute Room restore and UI instrumentation tests
         run: bash gradlew connectedDebugAndroidTest --no-daemon --stacktrace
+      - name: Save input timing observations
+        if: always()
+        run: |
+          mkdir -p app/build/reports
+          adb logcat -d -s KANAK_INPUT_TIMING:I '*:S' > app/build/reports/input-latency.log
       - name: Upload device reports
         if: always()
         uses: actions/upload-artifact@v5
@@ -92,6 +97,7 @@ jobs:
           name: restore-device-test-reports
           path: |
             app/build/reports/androidTests/
+            app/build/reports/input-latency.log
             app/build/outputs/androidTest-results/
             /tmp/kanak-emulator.log
           if-no-files-found: ignore
