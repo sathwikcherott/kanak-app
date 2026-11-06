@@ -65,7 +65,7 @@ class QuickEntryViewModel(
     }
 
     fun onAmountChanged(amount: String) {
-        val cleaned = amount.filter { it.isDigit() || (it == '.') || (it == ',') }
+        val cleaned = amount.filter { it.isDigit() || it in ". ,+-*xX×/÷()" }
         val minor = Expense.parseToMinorUnits(cleaned, _uiState.value.currency)
         val error = if ((cleaned.isNotEmpty()) && (minor <= 0L)) "Amount must be greater than zero" else null
         _uiState.update { it.copy(amountText = cleaned, amountError = error, source = EntrySource.TYPED) }
@@ -196,7 +196,17 @@ class QuickEntryViewModel(
                 val draft = VoiceDraftParser.parseTranscript(transcript)
                 _uiState.update { current ->
                     val minor = Expense.parseToMinorUnits(draft.amountText, current.currency)
-                    val error = if (draft.amountText.isNotEmpty() && minor <= 0L) "Amount must be greater than zero" else null
+                    val error = when {
+                        draft.isAmbiguous -> "Multiple expenses detected. Please clarify amount."
+                        draft.hasUncertainArithmetic -> "Uncertain calculation - please clarify amount."
+                        draft.amountText.isNotEmpty() && minor <= 0L -> "Amount must be greater than zero"
+                        else -> null
+                    }
+                    val userMsg = when {
+                        draft.isAmbiguous -> "Multiple expenses detected in voice input. Please clarify the amount."
+                        draft.hasUncertainArithmetic -> "Could not calculate spoken expression cleanly. Please clarify amount."
+                        else -> "Voice draft populated! Review and edit if needed."
+                    }
                     current.copy(
                         amountText = if (draft.amountText.isNotBlank()) draft.amountText else current.amountText,
                         selectedCategory = draft.category,
@@ -205,7 +215,7 @@ class QuickEntryViewModel(
                         categorizationState = if (draft.category != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
                         isListening = false,
                         amountError = error,
-                        userMessage = "Voice draft populated! Review and edit if needed."
+                        userMessage = userMsg
                     )
                 }
             },
