@@ -61,6 +61,64 @@ class QuickEntryViewModelVoiceTest {
     }
 
     @Test
+    fun onMicTapped_spokenArithmeticExpression_calculatesTotalAndInfersCategory() = runTest {
+        val fakeVoiceRepo = FakeVoiceInputRepository(
+            isAvailable = true,
+            mockTranscript = "25 plus 50 bus"
+        )
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo)
+
+        viewModel.onMicTapped()
+
+        assertEquals("75", viewModel.uiState.value.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
+        assertEquals("25 plus 50 bus", viewModel.uiState.value.note)
+        assertEquals(7500L, viewModel.uiState.value.amountMinor)
+        assertTrue(viewModel.uiState.value.isValidInput)
+    }
+
+    @Test
+    fun spokenAndTypedEquivalentExpenses_produceIdenticalResults() = runTest {
+        // Voice entry: "25 plus 50 bus"
+        val fakeVoiceRepo = FakeVoiceInputRepository(
+            isAvailable = true,
+            mockTranscript = "25 plus 50 bus"
+        )
+        val voiceVm = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo)
+        voiceVm.onMicTapped()
+        val voiceMinor = voiceVm.uiState.value.amountMinor
+
+        // Typed expression: "25 + 50"
+        val typedExprVm = QuickEntryViewModel(fakeExpenseRepository)
+        typedExprVm.onAmountChanged("25 + 50")
+        val typedExprMinor = typedExprVm.uiState.value.amountMinor
+
+        // Typed total: "75"
+        val typedTotalVm = QuickEntryViewModel(fakeExpenseRepository)
+        typedTotalVm.onAmountChanged("75")
+        val typedTotalMinor = typedTotalVm.uiState.value.amountMinor
+
+        assertEquals(7500L, voiceMinor)
+        assertEquals(voiceMinor, typedExprMinor)
+        assertEquals(typedExprMinor, typedTotalMinor)
+    }
+
+    @Test
+    fun onMicTapped_ambiguousMultiTransaction_asksForClarification() = runTest {
+        val fakeVoiceRepo = FakeVoiceInputRepository(
+            isAvailable = true,
+            mockTranscript = "25 for lunch and 50 for dinner"
+        )
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo)
+
+        viewModel.onMicTapped()
+
+        assertFalse(viewModel.uiState.value.isValidInput)
+        assertNotNull(viewModel.uiState.value.amountError)
+        assertEquals("Multiple expenses detected. Please clarify amount.", viewModel.uiState.value.amountError)
+    }
+
+    @Test
     fun voiceDraft_neverInheritsPreviousCategoryFromEarlierTransaction() = runTest {
         val fakeVoiceRepo = FakeVoiceInputRepository(
             isAvailable = true,

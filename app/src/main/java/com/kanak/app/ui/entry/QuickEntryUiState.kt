@@ -41,7 +41,7 @@ data class QuickEntryUiState(
         get() = Expense.parseToMinorUnits(amountText, currency)
 
     val isValidInput: Boolean
-        get() = amountText.isNotBlank() && (amountMinor > 0L) && (dateError == null)
+        get() = amountText.isNotBlank() && (amountMinor > 0L) && (dateError == null) && (amountError == null)
 
     val selectedDateFormatted: String
         get() = when (selectedDateOption) {

@@ -104,10 +104,26 @@ data class Expense(
         /**
          * Converts user input string into integer minor units using integer arithmetic only without Float/Double.
          * Supports grouping commas in input. Default currencyCode is "INR".
+         * Evaluates mathematical expressions using deterministic MathExpressionParser if input contains math operators.
          */
         fun parseToMinorUnits(input: String, currencyCode: String = "INR"): Long {
             var cleaned = input.trim()
             if (cleaned.isEmpty()) return 0L
+
+            if (cleaned.any { it in "+-*xX×/÷()" }) {
+                val evaluated = com.kanak.app.voice.MathExpressionParser.evaluateToBigDecimal(cleaned)
+                if (evaluated != null && evaluated.compareTo(java.math.BigDecimal.ZERO) > 0) {
+                    val fractionDigits = getFractionDigits(currencyCode)
+                    val multiplier = getMultiplier(fractionDigits)
+                    return try {
+                        val minorBD = evaluated.multiply(java.math.BigDecimal(multiplier))
+                        val minorLong = minorBD.toLong()
+                        if (minorLong <= 0L) 0L else minorLong
+                    } catch (_: Exception) {
+                        0L
+                    }
+                }
+            }
 
             // Handle grouping commas in input (e.g., "1,00,000.00" or "1,000.00")
             if (cleaned.contains(",") && cleaned.contains(".")) {
