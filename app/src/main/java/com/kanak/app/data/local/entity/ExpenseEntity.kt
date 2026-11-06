@@ -28,7 +28,7 @@ data class ExpenseEntity(
     val categorizationState: String
 )
 
-fun ExpenseEntity.toDomainModel(): Expense {
+fun ExpenseEntity.toDomainModel(categories: Map<String, ExpenseCategory> = emptyMap()): Expense {
     return Expense(
         id = id,
         amountMinor = amountMinor,
@@ -36,7 +36,7 @@ fun ExpenseEntity.toDomainModel(): Expense {
         occurredAt = occurredAt,
         note = note,
         category = category?.let { name ->
-            try { ExpenseCategory.valueOf(name) } catch (_: Exception) { null }
+            categories[name] ?: try { ExpenseCategory.valueOf(name) } catch (_: Exception) { null }
         },
         source = try { EntrySource.valueOf(source) } catch (_: Exception) { EntrySource.TYPED },
         categorizationState = try { CategorizationState.valueOf(categorizationState) } catch (_: Exception) { CategorizationState.UNCATEGORIZED }

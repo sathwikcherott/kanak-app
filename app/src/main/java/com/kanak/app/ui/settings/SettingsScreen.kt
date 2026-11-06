@@ -492,7 +492,7 @@ private fun RestoreConfirmationDialog(
                         .padding(KanakSpacing.small)
                 ) {
                     Text(
-                        text = "⚠️ Warning: Restoring this backup will replace all current expenses and currency/theme preferences with the backup data. This action cannot be undone.",
+                        text = "⚠️ Warning: Restoring this backup will replace all current expenses, custom categories, and currency/theme preferences with the backup data. This action cannot be undone.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.Bold
@@ -519,6 +519,7 @@ private fun RestoreConfirmationDialog(
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.SemiBold
                     )
+                    Text(text = "• Custom categories saved: ${summary.totalCustomCategories}", style = MaterialTheme.typography.bodySmall)
                     Text(
                         text = "• Unique Categories: ${summary.totalCategoriesCount} categories",
                         style = MaterialTheme.typography.bodySmall

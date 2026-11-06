@@ -82,6 +82,10 @@ fun QuickEntryScreen(
     onClearUserMessage: () -> Unit,
     modifier: Modifier = Modifier,
     autoStartVoice: Boolean = false,
+    onOpenNewCategory: () -> Unit = {},
+    onNewCategoryNameChanged: (String) -> Unit = {},
+    onCreateCategory: () -> Unit = {},
+    onCancelNewCategory: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -262,7 +266,10 @@ fun QuickEntryScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        KanakCategorizationBadge(state = uiState.categorizationState)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = onOpenNewCategory, enabled = !uiState.isSaving && !uiState.isCreatingCategory) { Text("+ New category") }
+                            KanakCategorizationBadge(state = uiState.categorizationState)
+                        }
                     }
 
                     FlowRow(
@@ -272,7 +279,7 @@ fun QuickEntryScreen(
                             .fillMaxWidth()
                             .semantics { contentDescription = "Category grid" }
                     ) {
-                        ExpenseCategory.entries.forEach { category ->
+                        uiState.availableCategories.forEach { category ->
                             KanakCategoryCard(
                                 category = category,
                                 selected = uiState.selectedCategory == category,
@@ -331,6 +338,11 @@ fun QuickEntryScreen(
                 }
             }
         }
+    }
+
+    if (uiState.showNewCategoryDialog) {
+        NewCategoryDialog(uiState.newCategoryName, uiState.categoryError, uiState.isCreatingCategory,
+            onNewCategoryNameChanged, onCreateCategory, onCancelNewCategory)
     }
 
     if (uiState.showDatePicker) {

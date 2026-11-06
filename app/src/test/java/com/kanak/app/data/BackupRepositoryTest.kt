@@ -19,6 +19,7 @@ import org.junit.Test
 class BackupRepositoryTest {
 
     private fun validJson(): String = KanakBackupSerializer.toJson(KanakBackup(
+        version = 1,
         exportedAt = 1000L,
         expenses = listOf(BackupExpense(1L, 100L, "INR", 1000L, note = "note"))
     ))
@@ -501,7 +502,7 @@ class BackupRepositoryTest {
         val unsupportedVersionJson = """
             {
               "format": "kanak_backup",
-              "version": 2,
+              "version": 3,
               "exportedAt": 1000,
               "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
               "expenses": []
@@ -510,9 +511,9 @@ class BackupRepositoryTest {
 
         try {
             KanakBackupSerializer.fromJson(unsupportedVersionJson)
-            fail("Should reject version 2")
+            fail("Should reject version 3")
         } catch (e: BackupException.UnsupportedSchemaVersion) {
-            assertEquals(2L, e.version)
+            assertEquals(3L, e.version)
         }
     }
 

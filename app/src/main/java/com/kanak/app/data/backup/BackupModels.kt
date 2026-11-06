@@ -64,11 +64,12 @@ data class KanakBackup(
     val exportedAt: Long = System.currentTimeMillis(),
     val appVersion: String = "1.0",
     val preferences: BackupPreferences = BackupPreferences(),
-    val expenses: List<BackupExpense> = emptyList()
+    val expenses: List<BackupExpense> = emptyList(),
+    val customCategories: List<ExpenseCategory> = emptyList()
 ) {
     companion object {
         const val FORMAT_IDENTIFIER = "kanak_backup"
-        const val CURRENT_BACKUP_VERSION = 1
+        const val CURRENT_BACKUP_VERSION = 2
         const val MAX_BACKUP_BYTES = 10 * 1024 * 1024L // 10 MiB; enforced before decoding file bytes
         const val MAX_EXPENSE_RECORDS = 50_000
     }
@@ -81,5 +82,6 @@ data class BackupSummary(
     val totalCategoriesCount: Int,
     val defaultCurrency: String,
     val themePreference: ThemePreference,
-    val backup: KanakBackup
+    val backup: KanakBackup,
+    val totalCustomCategories: Int = backup.customCategories.size
 )
