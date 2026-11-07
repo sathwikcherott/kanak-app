@@ -3,7 +3,7 @@
   "main": "categorizer.mjs",
   "compatibility_date": "2026-11-07",
   "observability": { "enabled": false },
-  "vars": { "GEMINI_MODEL": "gemini-3.8-flash" },
+  "vars": { "GEMINI_MODEL": "gemini-3.5-flash-lite" },
   "ratelimits": [
     {
       "name": "CATEGORIZATION_LIMIT",

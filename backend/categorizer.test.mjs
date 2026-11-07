@@ -5,7 +5,7 @@ import worker from "./categorizer.mjs";
 const env = {
   KANAK_ACCESS_TOKEN: "test_token_for_kanak_categorization",
   GEMINI_API_KEY: "test-server-key",
-  GEMINI_MODEL: "gemini-3.8-flash",
+  GEMINI_MODEL: "gemini-3.5-flash-lite",
   CATEGORIZATION_LIMIT: { limit: async () => ({ success: true }) },
 };
 
@@ -19,11 +19,11 @@ function request(payload, token = env.KANAK_ACCESS_TOKEN) {
 
 test("forwards the approved description and returns an allowlisted category", async (t) => {
   const upstream = t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.match(url, /gemini-3\.8-flash:generateContent$/);
+    assert.match(url, /gemini-3\.5-flash-lite:generateContent$/);
     assert.equal(options.headers["x-goog-api-key"], env.GEMINI_API_KEY);
     assert.equal(options.redirect, "manual");
     const { contents, generationConfig } = JSON.parse(options.body);
-    assert.equal(generationConfig.thinkingConfig.thinkingLevel, "low");
+    assert.equal(generationConfig.thinkingConfig.thinkingLevel, "minimal");
     assert.equal(generationConfig.maxOutputTokens, 1024);
     assert.deepEqual(contents, [{ role: "user", parts: [{ text: "acetaminophen" }] }]);
     return Response.json({ candidates: [{ content: { parts: [{ text: '{"category":"HEALTH"}' }] } }] });

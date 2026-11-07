@@ -88,7 +88,9 @@ export default {
                 properties: { category: { type: "STRING", enum: categories } },
                 required: ["category"],
               },
-              thinkingConfig: { thinkingLevel: "low" },
+              thinkingConfig: {
+                thinkingLevel: GEMINI_MODEL === "gemini-3.5-flash-lite" ? "minimal" : "low",
+              },
               maxOutputTokens: 1024,
             },
           }),
