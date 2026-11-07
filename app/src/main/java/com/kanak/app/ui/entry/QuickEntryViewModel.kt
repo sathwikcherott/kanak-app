@@ -70,10 +70,14 @@ class QuickEntryViewModel(
     }
 
     fun onAmountChanged(amount: String) {
-        val cleaned = amount.filter { it.isDigit() || (it == '.') || (it == ',') }
-        val minor = Expense.parseToMinorUnits(cleaned, _uiState.value.currency)
-        val error = if ((cleaned.isNotEmpty()) && (minor <= 0L)) "Amount must be greater than zero" else null
-        _uiState.update { it.copy(amountText = cleaned, amountError = error, source = EntrySource.TYPED) }
+        _uiState.update { current ->
+            val error = if (amount.isNotBlank() && Expense.parseToMinorUnits(amount, current.currency) <= 0L) {
+                "Enter a valid amount or calculation"
+            } else {
+                null
+            }
+            current.copy(amountText = amount, amountError = error, source = EntrySource.TYPED)
+        }
     }
 
     fun openNewCategoryDialog() {
@@ -232,20 +236,33 @@ class QuickEntryViewModel(
         repo.startListening(
             onResult = voiceResult@{ transcript ->
                 if (generation != voiceDraftGeneration) return@voiceResult
-                val draft = VoiceDraftParser.parseTranscript(transcript, _uiState.value.availableCategories.filter { it.isCustom })
                 _uiState.update { current ->
+                    val draft = VoiceDraftParser.parseTranscript(
+                        transcript, current.availableCategories.filter { it.isCustom }, current.currency
+                    )
                     val selectedCategory = current.selectedCategory?.takeIf { it.isCustom && current.categorizationState == CategorizationState.CONFIRMED } ?: draft.category
                     val minor = Expense.parseToMinorUnits(draft.amountText, current.currency)
-                    val error = if (draft.amountText.isNotEmpty() && minor <= 0L) "Amount must be greater than zero" else null
+                    val error = when {
+                        draft.isAmbiguous -> "Multiple expenses detected. Please clarify amount."
+                        draft.hasUncertainArithmetic -> "Uncertain calculation - please clarify amount."
+                        draft.amountText.isBlank() -> "Amount is required"
+                        minor <= 0L -> "Enter a valid amount or calculation"
+                        else -> null
+                    }
+                    val userMsg = when {
+                        draft.isAmbiguous -> "Multiple expenses detected in voice input. Please clarify the amount."
+                        draft.hasUncertainArithmetic -> "Could not calculate spoken expression cleanly. Please clarify amount."
+                        else -> "Voice draft populated! Review and edit if needed."
+                    }
                     current.copy(
-                        amountText = if (draft.amountText.isNotBlank()) draft.amountText else current.amountText,
+                        amountText = draft.amountText,
                         selectedCategory = selectedCategory,
                         note = if (draft.note.isNotBlank()) draft.note else current.note,
                         source = EntrySource.VOICE,
                         categorizationState = if (selectedCategory != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
                         isListening = false,
                         amountError = error,
-                        userMessage = "Voice draft populated! Review and edit if needed."
+                        userMessage = userMsg
                     )
                 }
             },
@@ -273,8 +290,10 @@ class QuickEntryViewModel(
     fun saveExpense(onSaved: () -> Unit = {}) {
         val currentState = _uiState.value
         if (!currentState.isValidInput) {
-            _uiState.update {
-                it.copy(amountError = if (it.amountText.isBlank()) "Amount is required" else "Amount must be greater than zero")
+            if (currentState.amountError == null && currentState.amountMinor <= 0L) {
+                _uiState.update {
+                    it.copy(amountError = if (it.amountText.isBlank()) "Amount is required" else "Enter a valid amount or calculation")
+                }
             }
             return
         }

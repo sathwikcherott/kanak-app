@@ -1,16 +1,20 @@
 package com.kanak.app.voice
 
+import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
+import java.math.BigDecimal
 
 data class VoiceDraft(
     val amountText: String,
     val category: ExpenseCategory?,
-    val note: String
+    val note: String,
+    val isAmbiguous: Boolean = false,
+    val hasUncertainArithmetic: Boolean = false,
 )
 
 /**
  * Utility for parsing spoken transcripts into editable draft fields (amount, category, note)
- * using deterministic local keyword classification.
+ * using deterministic local keyword classification and shared mathematical expression parsing.
  */
 object VoiceDraftParser {
 
@@ -39,7 +43,7 @@ object VoiceDraftParser {
             "paneer", "dosa", "idli", "vada", "sambar", "roti", "naan", "paratha", "thali", "meals", "meal",
             "pizza", "burger", "sandwich", "pasta", "chowmein", "noodles", "momos", "shawarma",
             "restaurant", "restaurant bill", "hotel", "swiggy", "zomato", "cafe", "dhaba", "dining", "dinner", "lunch",
-            "breakfast", "tea", "coffee", "snack", "snacks", "bakery", "cake", "ice cream", "dessert"
+            "breakfast", "tea", "coffee", "snack", "snacks", "bakery", "cake", "ice cream", "dessert", "food"
         )
         if (foodKeywords.any { lower.contains(it) }) {
             return ExpenseCategory.FOOD
@@ -60,7 +64,7 @@ object VoiceDraftParser {
         val transportKeywords = listOf(
             "bus", "bus ticket", "petrol", "diesel", "fuel", "gasoline", "taxi", "cab", "uber", "ola", "rapido",
             "metro", "subway", "train", "flight", "auto", "rickshaw", "parking", "parking fee", "toll", "fastag",
-            "bike service", "car service", "puncture", "mechanic"
+            "bike service", "car service", "puncture", "mechanic", "bmtc"
         )
         if (transportKeywords.any { lower.contains(it) }) {
             return ExpenseCategory.TRANSPORT
@@ -118,20 +122,68 @@ object VoiceDraftParser {
         return customMatches.singleOrNull()
     }
 
-    fun parseTranscript(transcript: String, customCategories: List<ExpenseCategory> = emptyList()): VoiceDraft {
-        val trimmed = transcript.trim()
-        if (trimmed.isEmpty()) return VoiceDraft(amountText = "", category = null, note = "")
+    private const val NUMBER = """\d+(?:[.,]\d+)*|[.,]\d+"""
+    private val amountStart = Regex("""\(*\s*(?:$NUMBER)""")
+    private val amountSpan = Regex("""[\d.,+\-*/×÷()\s]+""")
+    private val multiply = Regex("""(?<=[\d)])\s*x(?:\s+|(?=[\d(.,]))""")
+    private val currency = Regex("""[₹$€£]|\b(?:rupees?|rs|dollars?|euros?|pounds?)\b\.?""")
+    private val itemBeforeAddition = Regex("""(?<=\d)\s+(?:on|for)\s+([^\d+]+?)\s+and another\s+(?=\d)""")
+    private val itemAfterAddition = Regex("""(?:$NUMBER)\s+(?:on|for)\s+(.+)""")
+    private val separateItems = Regex("""(?:$NUMBER)\s+(?:on|for)\s+([^\d]+?)\s+and\s+(?:$NUMBER)\s+(?:on|for)\s+(.+)""")
+    private val spokenOperators = mapOf(
+        Regex("""\b(?:plus(?: another)?|and another|added to|add)\b""") to "+",
+        Regex("""\b(?:minus|subtract|subtracted by)\b""") to "-",
+        Regex("""\b(?:times|multiply by|multiplied by)\b""") to "*",
+        Regex("""\b(?:divide by|divided by)\b""") to "/",
+        Regex("""(?<=\d)\s+and\s+(?=[\d(])""") to "+",
+        Regex("""\binto\s+(?=[\d(])""") to "*",
+        Regex("""\bover\s+(?=[\d(])""") to "/",
+        Regex("""\bless\s+(?=[\d(])""") to "-"
+    )
 
-        val amountRegex = Regex("""[$€£₹]?\s*(\d+(?:[.,]\d{1,2})?)""")
-        val match = amountRegex.find(trimmed)
-        val amountText = match?.groupValues?.get(1)?.replace(",", ".") ?: ""
+    fun parseTranscript(
+        transcript: String,
+        customCategories: List<ExpenseCategory> = emptyList(),
+        currencyCode: String = "INR"
+    ): VoiceDraft {
+        val note = transcript.trim()
+        val draft = VoiceDraft("", inferCategory(note, customCategories), note)
+        var normalized = currency.replace(note.lowercase(), " ").replace('−', '-')
+        val separate = separateItems.find(normalized)
+        if (separate != null) {
+            if (separate.groupValues[1].trim() != separate.groupValues[2].trim()) {
+                return draft.copy(isAmbiguous = true)
+            }
+            val amounts = Regex(NUMBER).findAll(separate.value).take(2).map { it.value }.toList()
+            normalized = amounts.joinToString(" + ")
+        }
 
-        val category = inferCategory(trimmed, customCategories)
+        val firstItem = itemBeforeAddition.find(normalized)
+        if (firstItem != null) {
+            val secondItem = itemAfterAddition.find(normalized, firstItem.range.last + 1)
+            if (secondItem != null && firstItem.groupValues[1].trim() != secondItem.groupValues[1].trim()) {
+                return draft.copy(isAmbiguous = true)
+            }
+            normalized = normalized.replaceRange(firstItem.range, " + ")
+        }
+        for ((phrase, operator) in spokenOperators) {
+            normalized = phrase.replace(normalized, " $operator ")
+        }
+        normalized = multiply.replace(normalized, "*")
 
-        return VoiceDraft(
-            amountText = amountText,
-            category = category,
-            note = trimmed
-        )
+        val start = amountStart.find(normalized)?.range?.first ?: return draft
+        val expression = amountSpan.find(normalized, start)?.value?.trim()?.trimEnd(',', '.') ?: return draft
+        if (MathExpressionParser.hasOperator(expression)) {
+            val minor = Expense.parseToMinorUnits(expression, currencyCode)
+            if (minor <= 0L) return draft.copy(hasUncertainArithmetic = true)
+            val total = BigDecimal.valueOf(minor, Expense.getFractionDigits(currencyCode))
+            return draft.copy(amountText = MathExpressionParser.formatBigDecimal(total))
+        }
+
+        // Two adjacent numbers with a missing operator need review, even if the recognizer
+        // returned the rest of the transcript correctly.
+        if (expression.any { it.isWhitespace() }) return draft.copy(hasUncertainArithmetic = true)
+        val amount = if (',' in expression) MathExpressionParser.evaluate(expression) else expression
+        return draft.copy(amountText = amount.orEmpty())
     }
 }

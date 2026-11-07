@@ -2,10 +2,119 @@ package com.kanak.app.voice
 
 import com.kanak.app.model.ExpenseCategory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VoiceDraftParserTest {
+
+    @Test
+    fun parseTranscript_preservesOperatorsAndDescription() {
+        val cases = mapOf(
+            "25+50 bus" to "75",
+            "25×4 coffee" to "100",
+            "25x4 coffee" to "100",
+            "100 / (2 + 3) × 3 food" to "60",
+            "1,000 plus 25.50 bus" to "1025.5",
+            "100 ÷ 3 food" to "33.33",
+            "25 plus 50 for bus route 500" to "75"
+        )
+        for ((transcript, expected) in cases) {
+            val draft = VoiceDraftParser.parseTranscript(transcript)
+            assertEquals(transcript, expected, draft.amountText)
+            assertEquals(transcript, draft.note)
+        }
+    }
+
+    @Test
+    fun parseTranscript_requestsReviewWhenOperatorOrOperandIsMissing() {
+        for (transcript in listOf("25 50 bus", "25 plus bus", "500 divided by zero dinner", "25 x coffee")) {
+            val draft = VoiceDraftParser.parseTranscript(transcript)
+            assertTrue(transcript, draft.hasUncertainArithmetic)
+            assertEquals("", draft.amountText)
+            assertEquals(transcript, draft.note)
+        }
+    }
+
+    @Test
+    fun parseTranscript_voiceSpokenArithmeticExamples() {
+        // 1. "25 plus 50 bus" -> ₹75, Transport
+        val d1 = VoiceDraftParser.parseTranscript("25 plus 50 bus")
+        assertEquals("75", d1.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, d1.category)
+        assertFalse(d1.isAmbiguous)
+        assertFalse(d1.hasUncertainArithmetic)
+
+        // 2. "25 and 50 for BMTC" -> ₹75, Transport
+        val d2 = VoiceDraftParser.parseTranscript("25 and 50 for BMTC")
+        assertEquals("75", d2.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, d2.category)
+
+        // 3. "100 plus 50 plus 20 food" -> ₹170, Food
+        val d3 = VoiceDraftParser.parseTranscript("100 plus 50 plus 20 food")
+        assertEquals("170", d3.amountText)
+        assertEquals(ExpenseCategory.FOOD, d3.category)
+
+        // 4. "200 minus 50 shopping" -> ₹150, Shopping
+        val d4 = VoiceDraftParser.parseTranscript("200 minus 50 shopping")
+        assertEquals("150", d4.amountText)
+        assertEquals(ExpenseCategory.SHOPPING, d4.category)
+
+        // 5. "25 times 4 coffee" -> ₹100, Food
+        val d5 = VoiceDraftParser.parseTranscript("25 times 4 coffee")
+        assertEquals("100", d5.amountText)
+        assertEquals(ExpenseCategory.FOOD, d5.category)
+
+        // 6. "500 divided by 2 dinner" -> ₹250, Food
+        val d6 = VoiceDraftParser.parseTranscript("500 divided by 2 dinner")
+        assertEquals("250", d6.amountText)
+        assertEquals(ExpenseCategory.FOOD, d6.category)
+
+        // 7. "30 rupees plus 40 rupees auto" -> ₹70, Transport
+        val d7 = VoiceDraftParser.parseTranscript("30 rupees plus 40 rupees auto")
+        assertEquals("70", d7.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, d7.category)
+
+        // 8. "Spent 50 and another 25 on bus" -> ₹75, Transport
+        val d8 = VoiceDraftParser.parseTranscript("Spent 50 and another 25 on bus")
+        assertEquals("75", d8.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, d8.category)
+
+        // Natural speech: "I spent 25 on bus and another 50 on bus"
+        val d9 = VoiceDraftParser.parseTranscript("I spent 25 on bus and another 50 on bus")
+        assertEquals("75", d9.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, d9.category)
+    }
+
+    @Test
+    fun parseTranscript_decimalAmountsAndOperatorPrecedence() {
+        val d1 = VoiceDraftParser.parseTranscript("25.50 plus 50.25 bus")
+        assertEquals("75.75", d1.amountText)
+        assertEquals(ExpenseCategory.TRANSPORT, d1.category)
+
+        val d2 = VoiceDraftParser.parseTranscript("10 plus 20 times 3 food")
+        assertEquals("70", d2.amountText)
+        assertEquals(ExpenseCategory.FOOD, d2.category)
+    }
+
+    @Test
+    fun parseTranscript_ambiguousMultiTransaction_returnsAmbiguousFlag() {
+        val d = VoiceDraftParser.parseTranscript("25 for lunch and 50 for dinner")
+        assertTrue(d.isAmbiguous)
+        assertEquals("", d.amountText)
+    }
+
+    @Test
+    fun parseTranscript_invalidOrUncertainArithmetic_returnsUncertainFlag() {
+        val d1 = VoiceDraftParser.parseTranscript("25 plus times 50")
+        assertTrue(d1.hasUncertainArithmetic)
+        assertEquals("", d1.amountText)
+
+        val d2 = VoiceDraftParser.parseTranscript("500 divided by 0 dinner")
+        assertTrue(d2.hasUncertainArithmetic)
+        assertEquals("", d2.amountText)
+    }
 
     @Test
     fun parseTranscript_swathiKeywordExamples_infersGirlfriendCategoryAndPreservesDescription() {

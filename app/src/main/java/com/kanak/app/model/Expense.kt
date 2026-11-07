@@ -1,5 +1,7 @@
 package com.kanak.app.model
 
+import com.kanak.app.voice.MathExpressionParser
+import java.math.RoundingMode
 import java.util.Currency
 import java.util.Locale
 
@@ -104,10 +106,22 @@ data class Expense(
         /**
          * Converts user input string into integer minor units using integer arithmetic only without Float/Double.
          * Supports grouping commas in input. Default currencyCode is "INR".
+         * Evaluates mathematical expressions using deterministic MathExpressionParser if input contains math operators.
          */
         fun parseToMinorUnits(input: String, currencyCode: String = "INR"): Long {
             var cleaned = input.trim()
             if (cleaned.isEmpty()) return 0L
+
+            if (MathExpressionParser.hasOperator(cleaned)) {
+                val amount = MathExpressionParser.evaluateToBigDecimal(cleaned) ?: return 0L
+                return try {
+                    amount.movePointRight(getFractionDigits(currencyCode))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValueExact()
+                } catch (_: ArithmeticException) {
+                    0L
+                }
+            }
 
             // Handle grouping commas in input (e.g., "1,00,000.00" or "1,000.00")
             if (cleaned.contains(",") && cleaned.contains(".")) {
