@@ -88,19 +88,33 @@ export default {
                 properties: { category: { type: "STRING", enum: categories } },
                 required: ["category"],
               },
-              maxOutputTokens: 256,
+              thinkingConfig: { thinkingLevel: "low" },
+              maxOutputTokens: 1024,
             },
           }),
         },
       );
-      if (!upstream.ok) return json({ error: "provider_unavailable" }, 502);
+      if (!upstream.ok) {
+        return json({ error: "provider_unavailable", providerStatus: upstream.status }, 502);
+      }
 
       const response = await upstream.json();
-      const text = response.candidates?.[0]?.content?.parts?.findLast((part) => !part.thought)?.text;
-      const { category } = JSON.parse(text);
-      if (!categories.includes(category)) return json({ error: "invalid_provider_response" }, 502);
-      return json({ category: category === "NONE" ? null : category });
-    } catch {
+      const candidate = response.candidates?.[0];
+      if (candidate?.finishReason === "MAX_TOKENS") {
+        return json({ error: "provider_output_truncated" }, 502);
+      }
+      const text = candidate?.content?.parts?.findLast((part) => !part.thought)?.text;
+      try {
+        const { category } = JSON.parse(text);
+        if (categories.includes(category)) {
+          return json({ category: category === "NONE" ? null : category });
+        }
+      } catch {
+        // The response can contain a blocked or incomplete candidate.
+      }
+      return json({ error: "invalid_provider_response" }, 502);
+    } catch (error) {
+      if (error?.name === "TimeoutError") return json({ error: "provider_timeout" }, 504);
       return json({ error: "provider_unavailable" }, 502);
     }
   },

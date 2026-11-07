@@ -21,7 +21,9 @@ test("forwards the approved description and returns an allowlisted category", as
   const upstream = t.mock.method(globalThis, "fetch", async (url, options) => {
     assert.match(url, /gemini-3\.8-flash:generateContent$/);
     assert.equal(options.headers["x-goog-api-key"], env.GEMINI_API_KEY);
-    const { contents } = JSON.parse(options.body);
+    const { contents, generationConfig } = JSON.parse(options.body);
+    assert.equal(generationConfig.thinkingConfig.thinkingLevel, "low");
+    assert.equal(generationConfig.maxOutputTokens, 1024);
     assert.deepEqual(contents, [{ role: "user", parts: [{ text: "acetaminophen" }] }]);
     return Response.json({ candidates: [{ content: { parts: [{ text: '{"category":"HEALTH"}' }] } }] });
   });
@@ -51,4 +53,28 @@ test("returns a null suggestion for NONE and fails closed on unknown provider ou
   assert.deepEqual(await noMatch.json(), { category: null });
   category = "UNKNOWN_CATEGORY";
   assert.equal((await worker.fetch(request({ description: "item" }), env)).status, 502);
+});
+
+test("reports provider status without forwarding the provider error body", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ error: { message: "internal provider details" } }, { status: 403 }),
+  );
+  const response = await worker.fetch(request({ description: "item" }), env);
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: "provider_unavailable", providerStatus: 403 });
+});
+
+test("distinguishes exhausted output and timeouts from upstream HTTP errors", async (t) => {
+  let timedOut = false;
+  t.mock.method(globalThis, "fetch", async () => {
+    if (timedOut) throw new DOMException("request expired", "TimeoutError");
+    return Response.json({ candidates: [{ finishReason: "MAX_TOKENS" }] });
+  });
+  const truncated = await worker.fetch(request({ description: "item" }), env);
+  assert.equal(truncated.status, 502);
+  assert.deepEqual(await truncated.json(), { error: "provider_output_truncated" });
+  timedOut = true;
+  const timeout = await worker.fetch(request({ description: "item" }), env);
+  assert.equal(timeout.status, 504);
+  assert.deepEqual(await timeout.json(), { error: "provider_timeout" });
 });
