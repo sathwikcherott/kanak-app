@@ -1,6 +1,8 @@
 package com.kanak.app
 
 import android.app.Application
+import com.kanak.app.ai.AiConnectionStore
+import com.kanak.app.ai.HttpsCloudAiCategorizer
 import com.kanak.app.data.backup.AndroidBackupDocumentStore
 import com.kanak.app.data.backup.AndroidBackupFolderAccess
 import com.kanak.app.data.backup.BackupFileCatalog
@@ -13,6 +15,8 @@ import com.kanak.app.voice.AndroidVoiceInputRepository
 import com.kanak.app.voice.VoiceInputRepository
 
 class KanakApp : Application() {
+    val aiConnectionStore by lazy { AiConnectionStore(this) }
+    val cloudAiCategorizer by lazy { HttpsCloudAiCategorizer(aiConnectionStore) }
     val database by lazy { KanakDatabase.getDatabase(this) }
     val userPreferencesRepository by lazy { UserPreferencesRepository(this) }
     val voiceInputRepository: VoiceInputRepository by lazy { AndroidVoiceInputRepository(this) }

@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.kanak.app.ai.AiDescription
 import com.kanak.app.designsystem.components.CategoryIcon
 import com.kanak.app.designsystem.components.KanakAmountCard
 import com.kanak.app.designsystem.components.KanakCard
@@ -90,6 +92,10 @@ fun QuickEntryScreen(
     onNewCategoryNameChanged: (String) -> Unit = {},
     onCreateCategory: () -> Unit = {},
     onCancelNewCategory: () -> Unit = {},
+    aiConfigured: Boolean = false,
+    onRequestAiSuggestion: (String) -> Unit = {},
+    onApplyAiSuggestion: () -> Unit = {},
+    onDismissAiSuggestion: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -324,6 +330,14 @@ fun QuickEntryScreen(
                 )
             }
 
+            if (aiConfigured && uiState.selectedCategory == null && uiState.note.isNotBlank()) {
+                item {
+                    AiCategorySuggestion(
+                        uiState, onRequestAiSuggestion, onApplyAiSuggestion, onDismissAiSuggestion
+                    )
+                }
+            }
+
             item {
                 Spacer(modifier = Modifier.height(KanakSpacing.small))
                 KanakPrimaryButton(
@@ -399,6 +413,51 @@ fun QuickEntryScreen(
         ) {
             DatePicker(state = datePickerState)
         }
+    }
+}
+
+@Composable
+private fun AiCategorySuggestion(
+    uiState: QuickEntryUiState,
+    onRequest: (String) -> Unit,
+    onApply: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val description = remember(uiState.note) { AiDescription.forSuggestion(uiState.note) }
+    val preview = remember(uiState.note) { mutableStateOf<String?>(null) }
+    Column {
+        val suggestion = uiState.aiSuggestion
+        when {
+            uiState.isRequestingAi -> Text("Finding a category…")
+            suggestion != null -> {
+                Text("Suggested category: ${suggestion.displayName}")
+                Row {
+                    TextButton(onClick = onApply, enabled = !uiState.isSaving) { Text("Use category") }
+                    TextButton(onClick = onDismiss) { Text("Dismiss") }
+                }
+            }
+            description.any(Char::isLetter) -> {
+                TextButton(
+                    onClick = { preview.value = description },
+                    enabled = !uiState.isSaving && !uiState.isListening
+                ) { Text("Ask AI for category") }
+            }
+        }
+        uiState.aiMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    }
+    preview.value?.let { sharedDescription ->
+        AlertDialog(
+            onDismissRequest = { preview.value = null },
+            title = { Text("Share description with Gemini?") },
+            text = { Text(sharedDescription) },
+            confirmButton = {
+                TextButton(onClick = {
+                    preview.value = null
+                    onRequest(sharedDescription)
+                }) { Text("Send description") }
+            },
+            dismissButton = { TextButton(onClick = { preview.value = null }) { Text("Cancel") } }
+        )
     }
 }
 

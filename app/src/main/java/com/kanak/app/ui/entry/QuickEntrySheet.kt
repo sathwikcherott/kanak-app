@@ -23,7 +23,11 @@ import kotlinx.coroutines.flow.map
 /** Keep entry-state collection and recomposition inside the visible sheet. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuickEntrySheet(homeViewModel: HomeViewModel, entryViewModel: QuickEntryViewModel) {
+fun QuickEntrySheet(
+    homeViewModel: HomeViewModel,
+    entryViewModel: QuickEntryViewModel,
+    aiConfigured: Boolean = false,
+) {
     val sheetRequests = remember(homeViewModel) {
         homeViewModel.uiState.map { it.showQuickEntry to it.triggerVoiceOnEntry }.distinctUntilChanged()
     }
@@ -80,7 +84,11 @@ fun QuickEntrySheet(homeViewModel: HomeViewModel, entryViewModel: QuickEntryView
             onOpenNewCategory = entryViewModel::openNewCategoryDialog,
             onNewCategoryNameChanged = entryViewModel::onNewCategoryNameChanged,
             onCreateCategory = entryViewModel::createCategory,
-            onCancelNewCategory = entryViewModel::cancelNewCategory
+            onCancelNewCategory = entryViewModel::cancelNewCategory,
+            aiConfigured = aiConfigured,
+            onRequestAiSuggestion = entryViewModel::requestAiSuggestion,
+            onApplyAiSuggestion = entryViewModel::applyAiSuggestion,
+            onDismissAiSuggestion = entryViewModel::clearAiSuggestion
         )
     }
 }

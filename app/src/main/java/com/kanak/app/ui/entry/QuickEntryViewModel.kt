@@ -3,6 +3,9 @@ package com.kanak.app.ui.entry
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.kanak.app.ai.AiDescription
+import com.kanak.app.ai.CloudAiCategorizer
+import com.kanak.app.ai.model.AiCategorizationRequest
 import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.data.repository.ExpenseRepository
 import com.kanak.app.model.CategorizationState
@@ -20,6 +23,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import java.util.TimeZone
 
 class QuickEntryViewModel(
@@ -27,6 +32,7 @@ class QuickEntryViewModel(
     private val voiceInputRepository: VoiceInputRepository? = null,
     private val timeProvider: () -> Long = { System.currentTimeMillis() },
     private val timeZone: TimeZone = TimeZone.getDefault(),
+    private val aiCategorizer: CloudAiCategorizer? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -80,7 +86,58 @@ class QuickEntryViewModel(
         }
     }
 
+    private var aiRequest: Job? = null
+
+    fun requestAiSuggestion(preview: String) {
+        val categorizer = aiCategorizer ?: return
+        val state = _uiState.value
+        if (state.selectedCategory != null || state.isSaving || state.isListening ||
+            state.isRequestingAi || preview != AiDescription.forSuggestion(state.note) ||
+            preview.none(Char::isLetter)
+        ) return
+
+        _uiState.update { it.copy(isRequestingAi = true, aiSuggestion = null, aiMessage = null) }
+        aiRequest = viewModelScope.launch {
+            val result = try {
+                categorizer.categorizeExpense(AiCategorizationRequest(note = preview))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            ensureActive()
+            val suggestion = result.getOrNull()?.suggestedCategory?.takeIf { it in ExpenseCategory.entries }
+            _uiState.update {
+                it.copy(
+                    isRequestingAi = false,
+                    aiSuggestion = suggestion,
+                    aiMessage = when {
+                        result.isFailure -> "AI is unavailable. You can still save or pick a category."
+                        suggestion == null -> "AI did not find a category."
+                        else -> null
+                    }
+                )
+            }
+        }
+    }
+
+    fun applyAiSuggestion() {
+        val state = _uiState.value
+        if (state.selectedCategory == null && !state.isSaving && !state.isListening) {
+            state.aiSuggestion?.let(::onCategorySelected)
+        }
+    }
+
+    fun clearAiSuggestion() {
+        aiRequest?.cancel()
+        aiRequest = null
+        _uiState.update {
+            it.copy(isRequestingAi = false, aiSuggestion = null, aiMessage = null)
+        }
+    }
+
     fun openNewCategoryDialog() {
+        clearAiSuggestion()
         if (!_uiState.value.isSaving) _uiState.update { it.copy(showNewCategoryDialog = true, newCategoryName = "", categoryError = null) }
     }
 
@@ -115,6 +172,7 @@ class QuickEntryViewModel(
     }
 
     fun onCategorySelected(category: ExpenseCategory?) {
+        clearAiSuggestion()
         _uiState.update { current ->
             val newCategory = if (current.selectedCategory == category) null else category
             val newState = if (newCategory != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED
@@ -123,6 +181,7 @@ class QuickEntryViewModel(
     }
 
     fun onNoteChanged(note: String) {
+        clearAiSuggestion()
         _uiState.update { current ->
             if (current.categorizationState == CategorizationState.CONFIRMED) {
                 current.copy(note = note, source = EntrySource.TYPED)
@@ -230,12 +289,14 @@ class QuickEntryViewModel(
             return
         }
 
+        clearAiSuggestion()
         _uiState.update { it.copy(isListening = true) }
 
         val generation = ++voiceDraftGeneration
         repo.startListening(
             onResult = voiceResult@{ transcript ->
                 if (generation != voiceDraftGeneration) return@voiceResult
+                clearAiSuggestion()
                 _uiState.update { current ->
                     val draft = VoiceDraftParser.parseTranscript(
                         transcript, current.availableCategories.filter { it.isCustom }, current.currency
@@ -308,6 +369,7 @@ class QuickEntryViewModel(
 
         if (currentState.isSaving) return
 
+        clearAiSuggestion()
         _uiState.update { it.copy(isSaving = true, amountError = null, dateError = null) }
 
         viewModelScope.launch {
@@ -354,6 +416,7 @@ class QuickEntryViewModel(
 
     fun discardDraft() {
         if (_uiState.value.isSaving || _uiState.value.isCreatingCategory) return
+        clearAiSuggestion()
         voiceDraftGeneration++
         voiceInputRepository?.stopListening()
         _uiState.update {
@@ -404,11 +467,12 @@ class QuickEntryViewModel(
         private val repository: ExpenseRepository,
         private val voiceInputRepository: VoiceInputRepository? = null,
         private val timeProvider: () -> Long = { System.currentTimeMillis() },
-        private val timeZone: TimeZone = TimeZone.getDefault()
+        private val timeZone: TimeZone = TimeZone.getDefault(),
+        private val aiCategorizer: CloudAiCategorizer? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return QuickEntryViewModel(repository, voiceInputRepository, timeProvider, timeZone) as T
+            return QuickEntryViewModel(repository, voiceInputRepository, timeProvider, timeZone, aiCategorizer) as T
         }
     }
 }
