@@ -1,5 +1,6 @@
 package com.kanak.app.ui
 
+import com.kanak.app.ai.AiConnectionFailure
 import com.kanak.app.ai.AiDescription
 import com.kanak.app.ai.CloudAiCategorizer
 import com.kanak.app.ai.FakeCloudAiCategorizer
@@ -113,6 +114,25 @@ class QuickEntryViewModelVoiceTest {
         viewModel.saveExpense()
         advanceUntilIdle()
         assertNull(fakeExpenseRepository.savedExpenses.single().category)
+    }
+
+    @Test
+    fun aiConnectionFailure_showsSafeDiagnosticAndKeepsDraft() = runTest {
+        val message = "The AI backend rejected the access token (HTTP 401). Edit the connection in Settings."
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> =
+                Result.failure(AiConnectionFailure(message))
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+        viewModel.onAmountChanged("25")
+        viewModel.onNoteChanged("acetaminophen")
+        viewModel.requestAiSuggestion("acetaminophen")
+        advanceUntilIdle()
+
+        assertEquals(message, viewModel.uiState.value.aiMessage)
+        assertEquals("acetaminophen", viewModel.uiState.value.note)
+        assertTrue(viewModel.uiState.value.isValidInput)
+        assertNull(viewModel.uiState.value.aiSuggestion)
     }
 
     @Test

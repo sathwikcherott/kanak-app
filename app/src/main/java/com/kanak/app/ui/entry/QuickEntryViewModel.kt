@@ -3,6 +3,7 @@ package com.kanak.app.ui.entry
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.kanak.app.ai.AiConnectionFailure
 import com.kanak.app.ai.AiDescription
 import com.kanak.app.ai.CloudAiCategorizer
 import com.kanak.app.ai.model.AiCategorizationRequest
@@ -107,12 +108,14 @@ class QuickEntryViewModel(
             }
             ensureActive()
             val suggestion = result.getOrNull()?.suggestedCategory?.takeIf { it in ExpenseCategory.entries }
+            val failure = result.exceptionOrNull()
             _uiState.update {
                 it.copy(
                     isRequestingAi = false,
                     aiSuggestion = suggestion,
                     aiMessage = when {
-                        result.isFailure -> "AI is unavailable. You can still save or pick a category."
+                        failure is AiConnectionFailure -> failure.userMessage
+                        failure != null -> "AI is unavailable. You can still save or pick a category."
                         suggestion == null -> "AI did not find a category."
                         else -> null
                     }
