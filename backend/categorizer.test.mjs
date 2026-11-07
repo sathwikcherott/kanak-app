@@ -89,3 +89,27 @@ test("rejects redirects without forwarding the Gemini key to another URL", async
   assert.deepEqual(await response.json(), { error: "provider_unavailable", providerStatus: 302 });
   assert.equal(upstream.mock.callCount(), 1);
 });
+
+test("suggests Tech and Games only to apps that support those categories", async (t) => {
+  let category = "TECH";
+  let allowedCategories;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    allowedCategories = JSON.parse(options.body).generationConfig.responseSchema.properties.category.enum;
+    return Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({ category }) }] } }] });
+  });
+
+  const legacy = await worker.fetch(request({ description: "graphics card" }), env);
+  assert.equal(legacy.status, 502);
+  assert.equal(allowedCategories.includes("TECH"), false);
+  assert.equal(allowedCategories.includes("GAMES"), false);
+
+  for (const expected of ["TECH", "GAMES"]) {
+    category = expected;
+    const current = request({ description: expected === "TECH" ? "graphics card" : "Hades" });
+    current.headers.set("X-Kanak-Category-Version", "2");
+    const response = await worker.fetch(current, env);
+    assert.equal(response.status, 200);
+    assert.equal(allowedCategories.includes(expected), true);
+    assert.deepEqual(await response.json(), { category: expected });
+  }
+});

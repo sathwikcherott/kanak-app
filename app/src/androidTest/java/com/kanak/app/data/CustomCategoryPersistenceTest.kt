@@ -29,10 +29,16 @@ class CustomCategoryPersistenceTest {
     }
     private fun repository(db: KanakDatabase) = OfflineExpenseRepository(db.expenseDao(), Preferences(), db.aiEnrichmentJobDao(), db)
     private fun open(name: String) = Room.databaseBuilder(context, KanakDatabase::class.java, name)
-        .addMigrations(DatabaseMigrations.MIGRATION_1_2, DatabaseMigrations.MIGRATION_2_3, DatabaseMigrations.MIGRATION_3_4).build()
+        .addMigrations(
+            DatabaseMigrations.MIGRATION_1_2, DatabaseMigrations.MIGRATION_2_3,
+            DatabaseMigrations.MIGRATION_3_4, DatabaseMigrations.MIGRATION_4_5
+        ).build()
 
     @Test fun migrationsFromEveryExistingSchemaPreserveFinancialDataAndBuiltInCategory() = runBlocking {
-        for (version in 1..3) {
+        val techId = "custom:11111111-1234-1234-1234-123456789012"
+        val gamesId = "custom:22222222-1234-1234-1234-123456789012"
+        val petsId = "custom:33333333-1234-1234-1234-123456789012"
+        for (version in 1..4) {
             val name = "migration-" + version + "-" + UUID.randomUUID() + ".db"
             val path = context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
@@ -47,6 +53,19 @@ class CustomCategoryPersistenceTest {
                     for (i in 0 until indices.length()) sqlite.execSQL(indices.getJSONObject(i).getString("createSql").replace("$" + "{TABLE_NAME}", entity.getString("tableName")))
                 }
                 sqlite.execSQL("INSERT INTO expenses(id, amount_minor, currency, occurred_at, note, category, source, categorization_state) VALUES (1, 9007199254740991, 'INR', 1715000000000, 'For Swathi', 'GIRLFRIEND', 'VOICE', 'CONFIRMED')")
+                if (version == 4) {
+                    for ((id, label, key) in listOf(
+                        Triple(techId, "Tech", "tech"),
+                        Triple(gamesId, "Games", "games"),
+                        Triple(petsId, "Pets", "pets")
+                    )) {
+                        sqlite.execSQL("INSERT INTO custom_categories VALUES (?, ?, ?)", arrayOf(id, label, key))
+                    }
+                    sqlite.execSQL(
+                        "INSERT INTO expenses VALUES (2, 12345, 'INR', 1715000000001, 'GPU', ?, 'TYPED', 'CONFIRMED'), (3, 6789, 'INR', 1715000000002, 'Steam sale', ?, 'VOICE', 'CONFIRMED')",
+                        arrayOf(techId, gamesId)
+                    )
+                }
                 val setup = schema.getJSONArray("setupQueries")
                 for (i in 0 until setup.length()) sqlite.execSQL(setup.getString(i))
                 sqlite.version = version
@@ -54,13 +73,22 @@ class CustomCategoryPersistenceTest {
             val db = open(name)
             try {
                 val repo = repository(db)
-                val expense = repo.getAllExpenses().first().single()
+                val expenses = repo.getAllExpenses().first().associateBy { it.id }
+                val expense = expenses.getValue(1L)
                 assertEquals(9007199254740991L, expense.amountMinor)
                 assertEquals(ExpenseCategory.GIRLFRIEND, expense.category)
                 assertEquals("For Swathi", expense.note)
                 assertEquals(1715000000000, expense.occurredAt)
-                repo.createCategory("Pets")
-                assertEquals(11, repo.getCategories().first().size)
+                if (version == 4) {
+                    assertEquals(Expense(2, 12345, "INR", 1715000000001, "GPU", ExpenseCategory.TECH), expenses[2L])
+                    assertEquals(Expense(3, 6789, "INR", 1715000000002, "Steam sale", ExpenseCategory.GAMES, EntrySource.VOICE), expenses[3L])
+                    assertEquals(listOf(petsId), repo.getCategories().first().filter { it.isCustom }.map { it.name })
+                    assertEquals(3, expenses.size)
+                } else {
+                    repo.createCategory("Pets")
+                    assertEquals(1, expenses.size)
+                }
+                assertEquals(ExpenseCategory.entries.size + 1, repo.getCategories().first().size)
             } finally { db.close(); context.deleteDatabase(name) }
         }
     }

@@ -34,6 +34,7 @@ class HttpsCloudAiCategorizer(
                     connection.doOutput = true
                     connection.setRequestProperty("Authorization", "Bearer ${config.accessToken}")
                     connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                    connection.setRequestProperty("X-Kanak-Category-Version", "2")
                     val payload = JSONObject().put("description", description).toString().toByteArray(Charsets.UTF_8)
                     connection.setFixedLengthStreamingMode(payload.size)
                     connection.outputStream.use { it.write(payload) }

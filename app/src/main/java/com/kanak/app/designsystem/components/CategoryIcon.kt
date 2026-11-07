@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -115,6 +116,20 @@ fun CategoryIcon(
                 }
                 drawPath(path, tint, style = Stroke(strokeWidth))
                 drawCircle(tint, radius = w * 0.08f, center = Offset(w * 0.5f, h * 0.5f))
+            }
+            ExpenseCategory.TECH -> {
+                drawRect(tint, Offset(w * 0.15f, h * 0.2f), Size(w * 0.7f, h * 0.48f), style = Stroke(strokeWidth))
+                drawLine(tint, Offset(w * 0.5f, h * 0.68f), Offset(w * 0.5f, h * 0.82f), strokeWidth)
+                drawLine(tint, Offset(w * 0.32f, h * 0.82f), Offset(w * 0.68f, h * 0.82f), strokeWidth)
+            }
+            ExpenseCategory.GAMES -> {
+                drawRoundRect(
+                    tint, Offset(w * 0.12f, h * 0.28f), Size(w * 0.76f, h * 0.44f),
+                    CornerRadius(h * 0.16f), style = Stroke(strokeWidth)
+                )
+                drawLine(tint, Offset(w * 0.27f, h * 0.5f), Offset(w * 0.45f, h * 0.5f), strokeWidth)
+                drawLine(tint, Offset(w * 0.36f, h * 0.41f), Offset(w * 0.36f, h * 0.59f), strokeWidth)
+                drawCircle(tint, radius = w * 0.055f, center = Offset(w * 0.68f, h * 0.5f))
             }
             ExpenseCategory.EDUCATION -> {
                 val cap = Path().apply {

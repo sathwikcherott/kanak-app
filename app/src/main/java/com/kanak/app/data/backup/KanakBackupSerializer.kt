@@ -138,26 +138,25 @@ object KanakBackupSerializer {
         if (version == 1 && rootMap.containsKey("customCategories")) {
             throw BackupException.InvalidFormat("Version 1 cannot contain a custom category catalog")
         }
-        val customCategories = if (version >= 2) {
+        val customCategoriesById = linkedMapOf<String, ExpenseCategory>()
+        if (version >= 2) {
             val rows = rootMap["customCategories"] as? List<*>
                 ?: throw BackupException.MissingRequiredField("Missing customCategories in version 2 backup")
             if (rows.size > ExpenseCategory.MAX_CUSTOM_CATEGORIES) throw BackupException.LimitExceeded("Too many custom categories")
-            val seenCategoryIds = HashSet<String>()
             val seenCategoryNames = HashSet<String>()
-            rows.map { row ->
+            rows.forEach { row ->
                 val fields = row as? Map<*, *> ?: throw BackupException.InvalidFormat("Invalid custom category")
                 val id = fields["id"] as? String ?: throw BackupException.MissingRequiredField("Missing custom category ID")
                 val name = fields["name"] as? String ?: throw BackupException.MissingRequiredField("Missing custom category name")
-                val category = try { ExpenseCategory.custom(id, name) } catch (e: IllegalArgumentException) {
+                val category = try { ExpenseCategory.fromBackupCustom(id, name) } catch (e: IllegalArgumentException) {
                     throw BackupException.InvalidFormat(e.message ?: "Invalid custom category")
                 }
-                if (!seenCategoryIds.add(id) || !seenCategoryNames.add(ExpenseCategory.normalizedName(category.displayName))) {
+                if (id in customCategoriesById || !seenCategoryNames.add(ExpenseCategory.normalizedName(name))) {
                     throw BackupException.InvalidFormat("Duplicate custom category ID or name")
                 }
-                category
+                customCategoriesById[id] = category
             }
-        } else emptyList()
-        val customCategoriesById = customCategories.associateBy { it.name }
+        }
 
         // Expenses array validation
         val expensesList = rootMap["expenses"] as? List<*>
@@ -264,7 +263,7 @@ object KanakBackupSerializer {
             appVersion = appVersion,
             preferences = preferences,
             expenses = java.util.Collections.unmodifiableList(backupExpenses),
-            customCategories = java.util.Collections.unmodifiableList(customCategories)
+            customCategories = java.util.Collections.unmodifiableList(customCategoriesById.values.filter { it.isCustom })
         )
     }
 

@@ -61,7 +61,7 @@ class CustomCategoryViewModelTest {
         assertTrue(vm.uiState.value.showNewCategoryDialog)
         assertEquals(1, repo.createCalls)
         repo.gate!!.complete(Unit); advanceUntilIdle()
-        assertEquals(11, repo.categories.value.size)
+        assertEquals(ExpenseCategory.entries.size + 1, repo.categories.value.size)
         assertFalse(vm.uiState.value.showNewCategoryDialog)
     }
     @Test fun voiceDictationPreservesExplicitCustomCategoryAndDate() = runTest(dispatcher) {

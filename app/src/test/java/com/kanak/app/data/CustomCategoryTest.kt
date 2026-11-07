@@ -12,7 +12,7 @@ class CustomCategoryTest {
 
     @Test fun builtInIdentitiesRemainExactlyCompatible() {
         assertEquals("GIRLFRIEND", ExpenseCategory.GIRLFRIEND.name)
-        assertEquals(10, ExpenseCategory.entries.size)
+        assertEquals(12, ExpenseCategory.entries.size)
         assertEquals(ExpenseCategory.FOOD, ExpenseCategory.valueOf("FOOD"))
         assertFalse(ExpenseCategory.GIRLFRIEND.isCustom)
     }
@@ -22,7 +22,7 @@ class CustomCategoryTest {
         assertTrue(category().isCustom)
     }
     @Test fun invalidNamesAndBuiltInDuplicatesAreRejected() {
-        for (name in listOf("", "   ", "a".repeat(41), "Food & Dining", "food", "Girlfriend", "Bad\nname", "Bad\u202ename")) {
+        for (name in listOf("", "   ", "a".repeat(41), "Food & Dining", "food", "Girlfriend", "Tech", "games", "Bad\nname", "Bad\u202ename")) {
             try { category(name); fail("Accepted $name") } catch (_: IllegalArgumentException) { }
         }
     }
@@ -41,6 +41,47 @@ class CustomCategoryTest {
         val unused = KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup.copy(expenses = emptyList())))
         assertEquals(custom.displayName, unused.customCategories.single().displayName)
     }
+    @Test fun legacyTechAndGamesRestoreAsBuiltInCategories() {
+        val tech = category("Legacy hardware")
+        val games = ExpenseCategory.custom("custom:22222222-1234-1234-1234-123456789012", "Legacy software")
+        val backup = KanakBackup(
+            customCategories = listOf(tech, games),
+            expenses = listOf(
+                BackupExpense(1, 102500, "INR", 1000, note = "New RAM", category = tech),
+                BackupExpense(2, 50000, "INR", 2000, note = "Steam game", category = games)
+            )
+        )
+        val legacyJson = KanakBackupSerializer.toJson(backup)
+            .replace("Legacy hardware", " ＴＥＣＨ ").replace("Legacy software", "games")
+        val restored = KanakBackupSerializer.fromJson(legacyJson)
+        assertTrue(restored.customCategories.isEmpty())
+        assertEquals(
+            listOf(backup.expenses[0].copy(category = ExpenseCategory.TECH), backup.expenses[1].copy(category = ExpenseCategory.GAMES)),
+            restored.expenses
+        )
+        assertEquals(restored.expenses, KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(restored)).expenses)
+    }
+
+    @Test fun pcHardwareAndGamesUseSeparateLocalCategories() {
+        val cases = mapOf(
+            "GPU from Amazon" to ExpenseCategory.TECH,
+            "gaming keyboard" to ExpenseCategory.TECH,
+            "Steam Deck" to ExpenseCategory.TECH,
+            "game controller" to ExpenseCategory.TECH,
+            "new RTX 4070" to ExpenseCategory.TECH,
+            "Steam Deck game" to ExpenseCategory.GAMES,
+            "new PC game" to ExpenseCategory.GAMES,
+            "Steam sale" to ExpenseCategory.GAMES,
+            "Xbox Game Pass" to ExpenseCategory.GAMES,
+            "cinema ticket" to ExpenseCategory.ENTERTAINMENT,
+            "Steam game for Swathi" to ExpenseCategory.GIRLFRIEND
+        )
+        for ((description, expected) in cases) {
+            assertEquals(description, expected, VoiceDraftParser.inferCategory(description))
+            assertEquals(description, expected, VoiceDraftParser.parseTranscript("500 for $description").category)
+        }
+    }
+
     @Test fun legacyVersionOneRemainsReadable() {
         val backup = KanakBackup(version = 1, expenses = listOf(BackupExpense(1, 100, "INR", 1000, category = ExpenseCategory.GIRLFRIEND)))
         val parsed = KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup))
