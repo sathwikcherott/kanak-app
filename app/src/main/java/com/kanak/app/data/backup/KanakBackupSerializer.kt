@@ -39,6 +39,12 @@ object KanakBackupSerializer {
         if (backup.expenses.size > KanakBackup.MAX_EXPENSE_RECORDS) {
             throw BackupException.LimitExceeded("Backup exceeds maximum record count")
         }
+        if (backup.customCategories.size > ExpenseCategory.MAX_CUSTOM_CATEGORIES) {
+            throw BackupException.LimitExceeded("Too many custom categories")
+        }
+        if (backup.version == 1 && (backup.customCategories.isNotEmpty() || backup.expenses.any { it.category?.isCustom == true })) {
+            throw BackupException.InvalidFormat("Version 1 cannot contain custom categories")
+        }
         val sb = StringBuilder()
         sb.append("{\n")
         sb.append("  \"format\": \"").append(escapeJson(backup.format)).append("\",\n")
@@ -49,6 +55,15 @@ object KanakBackupSerializer {
         sb.append("    \"defaultCurrency\": \"").append(escapeJson(backup.preferences.defaultCurrency)).append("\",\n")
         sb.append("    \"themePreference\": \"").append(escapeJson(backup.preferences.themePreference.name)).append("\"\n")
         sb.append("  },\n")
+        if (backup.version >= 2) {
+            sb.append("  \"customCategories\": [\n")
+            backup.customCategories.forEachIndexed { index, category ->
+                sb.append("    {\"id\": \"").append(escapeJson(category.name))
+                    .append("\", \"name\": \"").append(escapeJson(category.displayName)).append("\"}")
+                    .append(if (index < backup.customCategories.size - 1) ",\n" else "\n")
+            }
+            sb.append("  ],\n")
+        }
         sb.append("  \"expenses\": [\n")
         backup.expenses.forEachIndexed { index, exp ->
             sb.append("    {\n")
@@ -82,7 +97,7 @@ object KanakBackupSerializer {
         if (versionRaw !is Long) {
             throw BackupException.CorruptedJson("Missing or invalid integer 'version' in backup")
         }
-        if (versionRaw != KanakBackup.CURRENT_BACKUP_VERSION.toLong()) {
+        if (versionRaw < 1L || versionRaw > KanakBackup.CURRENT_BACKUP_VERSION.toLong()) {
             throw BackupException.UnsupportedSchemaVersion(versionRaw)
         }
         val version = versionRaw.toInt()
@@ -119,6 +134,30 @@ object KanakBackupSerializer {
             defaultCurrency = defaultCurrency,
             themePreference = themePreference,
         )
+
+        if (version == 1 && rootMap.containsKey("customCategories")) {
+            throw BackupException.InvalidFormat("Version 1 cannot contain a custom category catalog")
+        }
+        val customCategories = if (version >= 2) {
+            val rows = rootMap["customCategories"] as? List<*>
+                ?: throw BackupException.MissingRequiredField("Missing customCategories in version 2 backup")
+            if (rows.size > ExpenseCategory.MAX_CUSTOM_CATEGORIES) throw BackupException.LimitExceeded("Too many custom categories")
+            val seenCategoryIds = HashSet<String>()
+            val seenCategoryNames = HashSet<String>()
+            rows.map { row ->
+                val fields = row as? Map<*, *> ?: throw BackupException.InvalidFormat("Invalid custom category")
+                val id = fields["id"] as? String ?: throw BackupException.MissingRequiredField("Missing custom category ID")
+                val name = fields["name"] as? String ?: throw BackupException.MissingRequiredField("Missing custom category name")
+                val category = try { ExpenseCategory.custom(id, name) } catch (e: IllegalArgumentException) {
+                    throw BackupException.InvalidFormat(e.message ?: "Invalid custom category")
+                }
+                if (!seenCategoryIds.add(id) || !seenCategoryNames.add(ExpenseCategory.normalizedName(category.displayName))) {
+                    throw BackupException.InvalidFormat("Duplicate custom category ID or name")
+                }
+                category
+            }
+        } else emptyList()
+        val customCategoriesById = customCategories.associateBy { it.name }
 
         // Expenses array validation
         val expensesList = rootMap["expenses"] as? List<*>
@@ -178,7 +217,7 @@ object KanakBackupSerializer {
             val categoryStr = nullableString(expMap, "category")
             val category: ExpenseCategory? = if (categoryStr != null) {
                 try {
-                    ExpenseCategory.valueOf(categoryStr)
+                    customCategoriesById[categoryStr] ?: ExpenseCategory.valueOf(categoryStr)
                 } catch (_: Exception) {
                     throw BackupException.UnknownEnum("Unknown expense category: '$categoryStr' for expense ID $idRaw")
                 }
@@ -224,7 +263,8 @@ object KanakBackupSerializer {
             exportedAt = exportedAtRaw,
             appVersion = appVersion,
             preferences = preferences,
-            expenses = java.util.Collections.unmodifiableList(backupExpenses)
+            expenses = java.util.Collections.unmodifiableList(backupExpenses),
+            customCategories = java.util.Collections.unmodifiableList(customCategories)
         )
     }
 

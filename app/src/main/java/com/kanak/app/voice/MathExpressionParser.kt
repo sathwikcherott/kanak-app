@@ -9,19 +9,24 @@ import java.math.RoundingMode
  */
 object MathExpressionParser {
 
+    private const val MAX_LENGTH = 256
+
+    fun hasOperator(input: String): Boolean = input.any { it in "+-−*xX×/÷()" }
+
     /**
      * Evaluates a mathematical expression string and returns the result as a positive BigDecimal,
      * or null if the expression is invalid, contains division by zero, or results in zero/negative values.
      */
     fun evaluateToBigDecimal(expression: String): BigDecimal? {
         val trimmed = expression.trim()
-        if (trimmed.isEmpty()) return null
+        if (trimmed.isEmpty() || trimmed.length > MAX_LENGTH) return null
 
         val normalized = trimmed
             .replace('x', '*')
             .replace('X', '*')
             .replace('×', '*')
             .replace('÷', '/')
+            .replace('−', '-')
 
         val tokens = tokenize(normalized) ?: return null
         if (tokens.isEmpty()) return null
@@ -61,6 +66,8 @@ object MathExpressionParser {
         object RPAREN : Token()
     }
 
+    private val groupedNumber = Regex("""(?:\d{1,3}(?:,\d{3})+|\d{1,2}(?:,\d{2})+,\d{3})(?:\.\d+)?""")
+
     private fun tokenize(input: String): List<Token>? {
         val tokens = mutableListOf<Token>()
         var i = 0
@@ -83,42 +90,14 @@ object MathExpressionParser {
                     i++
                 }
                 ch.isDigit() || (ch == '.') || (ch == ',') -> {
-                    val numBuilder = StringBuilder()
-                    var hasDot = false
-
-                    while (i < len) {
-                        val c = input[i]
-                        if (c.isDigit()) {
-                            numBuilder.append(c)
-                            i++
-                        } else if (c == '.' || c == ',') {
-                            if (c == ',') {
-                                val remaining = input.substring(i + 1)
-                                val digitsAfter = remaining.takeWhile { it.isDigit() }
-                                if (digitsAfter.length == 3 || (digitsAfter.length == 2 && remaining.drop(digitsAfter.length).startsWith(","))) {
-                                    i++
-                                    continue
-                                } else if (!hasDot) {
-                                    hasDot = true
-                                    numBuilder.append('.')
-                                    i++
-                                } else {
-                                    return null
-                                }
-                            } else {
-                                if (hasDot) return null
-                                hasDot = true
-                                numBuilder.append('.')
-                                i++
-                            }
-                        } else {
-                            break
-                        }
+                    val start = i
+                    while (i < len && (input[i].isDigit() || input[i] in ".,")) i++
+                    val number = input.substring(start, i)
+                    val normalized = when {
+                        groupedNumber.matches(number) -> number.replace(",", "")
+                        else -> number.replace(',', '.')
                     }
-
-                    val str = numBuilder.toString()
-                    if (str.isEmpty() || str == ".") return null
-                    val bd = str.toBigDecimalOrNull() ?: return null
+                    val bd = normalized.toBigDecimalOrNull() ?: return null
                     tokens.add(Token.Number(bd))
                 }
                 else -> return null

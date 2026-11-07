@@ -29,6 +29,11 @@ class TransactionsViewModel(
 
     init {
         viewModelScope.launch {
+            expenseRepository.getCategories().collectLatest { categories ->
+                _uiState.update { it.copy(availableCategories = categories) }
+            }
+        }
+        viewModelScope.launch {
             expenseRepository.getDefaultCurrency().collectLatest { currency ->
                 _uiState.update { it.copy(currency = currency) }
             }

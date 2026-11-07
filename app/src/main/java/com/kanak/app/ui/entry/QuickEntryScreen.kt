@@ -43,6 +43,8 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +53,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.kanak.app.designsystem.components.CategoryIcon
@@ -65,6 +68,7 @@ import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
+import com.kanak.app.voice.MathExpressionParser
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -82,9 +86,14 @@ fun QuickEntryScreen(
     onClearUserMessage: () -> Unit,
     modifier: Modifier = Modifier,
     autoStartVoice: Boolean = false,
+    onOpenNewCategory: () -> Unit = {},
+    onNewCategoryNameChanged: (String) -> Unit = {},
+    onCreateCategory: () -> Unit = {},
+    onCancelNewCategory: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val calculationKeyboard = rememberSaveable { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
@@ -174,10 +183,28 @@ fun QuickEntryScreen(
                     voiceInputAvailable = uiState.voiceInputAvailable,
                     onMicTapped = { handleMicClick() },
                     keyboardOptions = KeyboardOptions(
-                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal,
+                        keyboardType = if (calculationKeyboard.value) KeyboardType.Ascii else KeyboardType.Decimal,
                         imeAction = ImeAction.Next
                     )
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val amount = uiState.amountMinor
+                    if (MathExpressionParser.hasOperator(uiState.amountText) && amount > 0L) {
+                        Text(
+                            text = "= ${Expense(amountMinor = amount, currency = uiState.currency).amountWithSymbol()}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    TextButton(onClick = { calculationKeyboard.value = !calculationKeyboard.value }) {
+                        Text(if (calculationKeyboard.value) "Number keyboard" else "Calculate")
+                    }
+                }
             }
 
             item {
@@ -262,7 +289,10 @@ fun QuickEntryScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        KanakCategorizationBadge(state = uiState.categorizationState)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(onClick = onOpenNewCategory, enabled = !uiState.isSaving && !uiState.isCreatingCategory) { Text("+ New category") }
+                            KanakCategorizationBadge(state = uiState.categorizationState)
+                        }
                     }
 
                     FlowRow(
@@ -272,7 +302,7 @@ fun QuickEntryScreen(
                             .fillMaxWidth()
                             .semantics { contentDescription = "Category grid" }
                     ) {
-                        ExpenseCategory.entries.forEach { category ->
+                        uiState.availableCategories.forEach { category ->
                             KanakCategoryCard(
                                 category = category,
                                 selected = uiState.selectedCategory == category,
@@ -331,6 +361,11 @@ fun QuickEntryScreen(
                 }
             }
         }
+    }
+
+    if (uiState.showNewCategoryDialog) {
+        NewCategoryDialog(uiState.newCategoryName, uiState.categoryError, uiState.isCreatingCategory,
+            onNewCategoryNameChanged, onCreateCategory, onCancelNewCategory)
     }
 
     if (uiState.showDatePicker) {

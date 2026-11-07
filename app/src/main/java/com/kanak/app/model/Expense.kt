@@ -1,5 +1,7 @@
 package com.kanak.app.model
 
+import com.kanak.app.voice.MathExpressionParser
+import java.math.RoundingMode
 import java.util.Currency
 import java.util.Locale
 
@@ -110,18 +112,14 @@ data class Expense(
             var cleaned = input.trim()
             if (cleaned.isEmpty()) return 0L
 
-            if (cleaned.any { it in "+-*xX×/÷()" }) {
-                val evaluated = com.kanak.app.voice.MathExpressionParser.evaluateToBigDecimal(cleaned)
-                if (evaluated != null && evaluated.compareTo(java.math.BigDecimal.ZERO) > 0) {
-                    val fractionDigits = getFractionDigits(currencyCode)
-                    val multiplier = getMultiplier(fractionDigits)
-                    return try {
-                        val minorBD = evaluated.multiply(java.math.BigDecimal(multiplier))
-                        val minorLong = minorBD.toLong()
-                        if (minorLong <= 0L) 0L else minorLong
-                    } catch (_: Exception) {
-                        0L
-                    }
+            if (MathExpressionParser.hasOperator(cleaned)) {
+                val amount = MathExpressionParser.evaluateToBigDecimal(cleaned) ?: return 0L
+                return try {
+                    amount.movePointRight(getFractionDigits(currencyCode))
+                        .setScale(0, RoundingMode.HALF_UP)
+                        .longValueExact()
+                } catch (_: ArithmeticException) {
+                    0L
                 }
             }
 

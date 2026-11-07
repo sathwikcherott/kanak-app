@@ -10,6 +10,34 @@ import org.junit.Test
 class VoiceDraftParserTest {
 
     @Test
+    fun parseTranscript_preservesOperatorsAndDescription() {
+        val cases = mapOf(
+            "25+50 bus" to "75",
+            "25×4 coffee" to "100",
+            "25x4 coffee" to "100",
+            "100 / (2 + 3) × 3 food" to "60",
+            "1,000 plus 25.50 bus" to "1025.5",
+            "100 ÷ 3 food" to "33.33",
+            "25 plus 50 for bus route 500" to "75"
+        )
+        for ((transcript, expected) in cases) {
+            val draft = VoiceDraftParser.parseTranscript(transcript)
+            assertEquals(transcript, expected, draft.amountText)
+            assertEquals(transcript, draft.note)
+        }
+    }
+
+    @Test
+    fun parseTranscript_requestsReviewWhenOperatorOrOperandIsMissing() {
+        for (transcript in listOf("25 50 bus", "25 plus bus", "500 divided by zero dinner", "25 x coffee")) {
+            val draft = VoiceDraftParser.parseTranscript(transcript)
+            assertTrue(transcript, draft.hasUncertainArithmetic)
+            assertEquals("", draft.amountText)
+            assertEquals(transcript, draft.note)
+        }
+    }
+
+    @Test
     fun parseTranscript_voiceSpokenArithmeticExamples() {
         // 1. "25 plus 50 bus" -> ₹75, Transport
         val d1 = VoiceDraftParser.parseTranscript("25 plus 50 bus")

@@ -1,10 +1,19 @@
 package com.kanak.app.voice
 
+import com.kanak.app.model.Expense
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class MathExpressionParserTest {
+
+    @Test
+    fun currencyConversion_roundsCalculatedTotalAndRejectsOverflow() {
+        assertEquals(3333L, Expense.parseToMinorUnits("100 / 3"))
+        assertEquals(34L, Expense.parseToMinorUnits("101 / 3", "JPY"))
+        assertEquals(0L, Expense.parseToMinorUnits("184467440737095516.17 + 0.01"))
+        assertNull(MathExpressionParser.evaluate("(".repeat(1000) + "1" + ")".repeat(1000)))
+    }
 
     @Test
     fun evaluate_addition() {

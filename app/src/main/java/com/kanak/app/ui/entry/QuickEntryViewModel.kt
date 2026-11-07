@@ -41,6 +41,11 @@ class QuickEntryViewModel(
 
     init {
         viewModelScope.launch {
+            expenseRepository.getCategories().collectLatest { categories ->
+                _uiState.update { it.copy(availableCategories = categories) }
+            }
+        }
+        viewModelScope.launch {
             expenseRepository.getDefaultCurrency().collectLatest { currency ->
                 _uiState.update { it.copy(currency = currency) }
             }
@@ -65,10 +70,48 @@ class QuickEntryViewModel(
     }
 
     fun onAmountChanged(amount: String) {
-        val cleaned = amount.filter { it.isDigit() || it in ". ,+-*xX×/÷()" }
-        val minor = Expense.parseToMinorUnits(cleaned, _uiState.value.currency)
-        val error = if ((cleaned.isNotEmpty()) && (minor <= 0L)) "Amount must be greater than zero" else null
-        _uiState.update { it.copy(amountText = cleaned, amountError = error, source = EntrySource.TYPED) }
+        _uiState.update { current ->
+            val error = if (amount.isNotBlank() && Expense.parseToMinorUnits(amount, current.currency) <= 0L) {
+                "Enter a valid amount or calculation"
+            } else {
+                null
+            }
+            current.copy(amountText = amount, amountError = error, source = EntrySource.TYPED)
+        }
+    }
+
+    fun openNewCategoryDialog() {
+        if (!_uiState.value.isSaving) _uiState.update { it.copy(showNewCategoryDialog = true, newCategoryName = "", categoryError = null) }
+    }
+
+    fun onNewCategoryNameChanged(name: String) {
+        if (!_uiState.value.isCreatingCategory) _uiState.update { it.copy(newCategoryName = name.take(200), categoryError = null) }
+    }
+
+    fun cancelNewCategory() {
+        if (!_uiState.value.isCreatingCategory) _uiState.update { it.copy(showNewCategoryDialog = false, categoryError = null) }
+    }
+
+    fun createCategory() {
+        val state = _uiState.value
+        if (state.isCreatingCategory || !state.showNewCategoryDialog || state.isSaving) return
+        _uiState.update { it.copy(isCreatingCategory = true, categoryError = null) }
+        viewModelScope.launch {
+            try {
+                val category = expenseRepository.createCategory(state.newCategoryName)
+                _uiState.update {
+                    it.copy(selectedCategory = category, categorizationState = CategorizationState.CONFIRMED,
+                        showNewCategoryDialog = false, newCategoryName = "",
+                        availableCategories = if (it.availableCategories.any { c -> c.name == category.name }) it.availableCategories else it.availableCategories + category)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { it.copy(categoryError = e.localizedMessage ?: "Could not create category") }
+            } finally {
+                _uiState.update { it.copy(isCreatingCategory = false) }
+            }
+        }
     }
 
     fun onCategorySelected(category: ExpenseCategory?) {
@@ -84,7 +127,7 @@ class QuickEntryViewModel(
             if (current.categorizationState == CategorizationState.CONFIRMED) {
                 current.copy(note = note, source = EntrySource.TYPED)
             } else {
-                val inferredCategory = VoiceDraftParser.inferCategory(note)
+                val inferredCategory = VoiceDraftParser.inferCategory(note, current.availableCategories.filter { it.isCustom })
                 val newState = if (inferredCategory != null) CategorizationState.AUTO_CATEGORIZED else CategorizationState.UNCATEGORIZED
                 current.copy(
                     note = note,
@@ -193,13 +236,17 @@ class QuickEntryViewModel(
         repo.startListening(
             onResult = voiceResult@{ transcript ->
                 if (generation != voiceDraftGeneration) return@voiceResult
-                val draft = VoiceDraftParser.parseTranscript(transcript)
                 _uiState.update { current ->
+                    val draft = VoiceDraftParser.parseTranscript(
+                        transcript, current.availableCategories.filter { it.isCustom }, current.currency
+                    )
+                    val selectedCategory = current.selectedCategory?.takeIf { it.isCustom && current.categorizationState == CategorizationState.CONFIRMED } ?: draft.category
                     val minor = Expense.parseToMinorUnits(draft.amountText, current.currency)
                     val error = when {
                         draft.isAmbiguous -> "Multiple expenses detected. Please clarify amount."
                         draft.hasUncertainArithmetic -> "Uncertain calculation - please clarify amount."
-                        draft.amountText.isNotEmpty() && minor <= 0L -> "Amount must be greater than zero"
+                        draft.amountText.isBlank() -> "Amount is required"
+                        minor <= 0L -> "Enter a valid amount or calculation"
                         else -> null
                     }
                     val userMsg = when {
@@ -208,11 +255,11 @@ class QuickEntryViewModel(
                         else -> "Voice draft populated! Review and edit if needed."
                     }
                     current.copy(
-                        amountText = if (draft.amountText.isNotBlank()) draft.amountText else current.amountText,
-                        selectedCategory = draft.category,
+                        amountText = draft.amountText,
+                        selectedCategory = selectedCategory,
                         note = if (draft.note.isNotBlank()) draft.note else current.note,
                         source = EntrySource.VOICE,
-                        categorizationState = if (draft.category != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
+                        categorizationState = if (selectedCategory != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
                         isListening = false,
                         amountError = error,
                         userMessage = userMsg
@@ -243,8 +290,10 @@ class QuickEntryViewModel(
     fun saveExpense(onSaved: () -> Unit = {}) {
         val currentState = _uiState.value
         if (!currentState.isValidInput) {
-            _uiState.update {
-                it.copy(amountError = if (it.amountText.isBlank()) "Amount is required" else "Amount must be greater than zero")
+            if (currentState.amountError == null && currentState.amountMinor <= 0L) {
+                _uiState.update {
+                    it.copy(amountError = if (it.amountText.isBlank()) "Amount is required" else "Enter a valid amount or calculation")
+                }
             }
             return
         }
@@ -304,12 +353,13 @@ class QuickEntryViewModel(
     }
 
     fun discardDraft() {
-        if (_uiState.value.isSaving) return
+        if (_uiState.value.isSaving || _uiState.value.isCreatingCategory) return
         voiceDraftGeneration++
         voiceInputRepository?.stopListening()
         _uiState.update {
             QuickEntryUiState(
                 currency = it.currency,
+                availableCategories = it.availableCategories,
                 themePreference = it.themePreference,
                 recentExpenses = it.recentExpenses,
                 voiceInputAvailable = it.voiceInputAvailable,

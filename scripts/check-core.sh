@@ -13,6 +13,8 @@ curl --fail --location --retry 2 -o "$kanak_check_dir/hamcrest.jar" \
   https://repo.maven.apache.org/maven2/org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar
 "$kanak_check_dir/kotlinc/bin/kotlinc" \
   app/src/main/java/com/kanak/app/model/*.kt \
+  app/src/main/java/com/kanak/app/voice/MathExpressionParser.kt \
+  app/src/main/java/com/kanak/app/voice/VoiceDraftParser.kt \
   app/src/main/java/com/kanak/app/data/local/datastore/ThemePreference.kt \
   app/src/main/java/com/kanak/app/data/backup/BackupModels.kt \
   app/src/main/java/com/kanak/app/data/backup/BackupFileNames.kt \
@@ -21,7 +23,11 @@ curl --fail --location --retry 2 -o "$kanak_check_dir/hamcrest.jar" \
   app/src/main/java/com/kanak/app/ui/entry/ExpenseDateRules.kt \
   app/src/test/java/com/kanak/app/data/BackupRepositoryTest.kt \
   app/src/test/java/com/kanak/app/data/BackupFileNamesTest.kt \
+  app/src/test/java/com/kanak/app/data/CustomCategoryTest.kt \
   app/src/test/java/com/kanak/app/ui/ExpenseDateRulesTest.kt \
+  app/src/test/java/com/kanak/app/voice/MathExpressionParserTest.kt \
+  app/src/test/java/com/kanak/app/voice/VoiceDraftParserTest.kt \
   -classpath "$kanak_check_dir/junit.jar" -include-runtime -d "$kanak_check_dir/checks.jar"
 java -cp "$kanak_check_dir/checks.jar:$kanak_check_dir/junit.jar:$kanak_check_dir/hamcrest.jar" \
-  org.junit.runner.JUnitCore com.kanak.app.data.BackupFileNamesTest com.kanak.app.data.BackupRepositoryTest com.kanak.app.ui.ExpenseDateRulesTest
+  org.junit.runner.JUnitCore com.kanak.app.data.CustomCategoryTest com.kanak.app.data.BackupFileNamesTest com.kanak.app.data.BackupRepositoryTest com.kanak.app.ui.ExpenseDateRulesTest \
+  com.kanak.app.voice.MathExpressionParserTest com.kanak.app.voice.VoiceDraftParserTest

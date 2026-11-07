@@ -29,6 +29,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
+import com.kanak.app.data.local.entity.CustomCategoryEntity
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.kanak.app.data.local.KanakDatabase
@@ -42,6 +43,25 @@ class OfflineExpenseRepository(
     private val writes = Mutex()
     private var restoreGeneration = 0L
 
+    override fun getCategories(): Flow<List<ExpenseCategory>> = database?.customCategoryDao()?.observeAll()?.map { rows ->
+        ExpenseCategory.entries + rows.map { it.toDomainModel() }
+    } ?: flowOf(ExpenseCategory.entries)
+
+    override suspend fun createCategory(name: String): ExpenseCategory = withContext(Dispatchers.IO) {
+        val cleaned = ExpenseCategory.cleanName(name)
+        require(!ExpenseCategory.isBuiltInName(cleaned)) { "This category already exists" }
+        val dao = checkNotNull(database) { "Database required to create categories" }.customCategoryDao()
+        writes.withLock {
+            val existing = dao.getAll()
+            require(existing.size < ExpenseCategory.MAX_CUSTOM_CATEGORIES) { "You can create up to ${ExpenseCategory.MAX_CUSTOM_CATEGORIES} custom categories" }
+            require(existing.none { it.normalizedName == ExpenseCategory.normalizedName(cleaned) }) { "This category already exists" }
+            val category = ExpenseCategory.custom("custom:${java.util.UUID.randomUUID()}", cleaned)
+            dao.insert(CustomCategoryEntity.from(category))
+            category
+        }
+    }
+
+
     override suspend fun snapshotForBackup(): KanakBackup = withContext(Dispatchers.IO) {
         writes.withLock {
             KanakBackup(
@@ -49,6 +69,7 @@ class OfflineExpenseRepository(
                     userPreferencesDataSource.defaultCurrency.first(),
                     userPreferencesDataSource.themePreference.first()
                 ),
+                customCategories = getCategories().first().filter { it.isCustom },
                 expenses = getAllExpenses().first().map(BackupExpense::fromDomainModel)
             )
         }
@@ -66,6 +87,8 @@ class OfflineExpenseRepository(
                 db.runInTransaction {
                     db.aiEnrichmentJobDao().deleteAllJobs()
                     db.expenseDao().deleteAllExpenses()
+                    db.customCategoryDao().deleteAll()
+                    db.customCategoryDao().insertAll(validated.customCategories.map(CustomCategoryEntity::from))
                     db.expenseDao().insertExpenses(entities)
                 }
                 restoreGeneration++
@@ -82,14 +105,24 @@ class OfflineExpenseRepository(
     }
 
     override fun getAllExpenses(): Flow<List<Expense>> {
-        return expenseDao.getAllExpenses().map { entities ->
-            entities.map { it.toDomainModel() }
+        val dao = database?.customCategoryDao()
+            ?: return expenseDao.getAllExpenses().map { rows -> rows.map { it.toDomainModel() } }
+        return dao.observeExpenses().map { rows ->
+            val categories = rows.asSequence().filter { it.customCategoryName != null && it.expense.category != null }
+                .distinctBy { it.expense.category }
+                .associate { it.expense.category!! to ExpenseCategory.custom(it.expense.category!!, it.customCategoryName!!) }
+            rows.map { it.expense.toDomainModel(categories) }
         }
     }
 
     override fun getExpenseById(id: Long): Flow<Expense?> {
-        return expenseDao.getExpenseById(id).map { entity ->
-            entity?.toDomainModel()
+        val dao = database?.customCategoryDao()
+            ?: return expenseDao.getExpenseById(id).map { it?.toDomainModel() }
+        return dao.observeExpense(id).map { row ->
+            row?.let {
+                val category = it.customCategoryName?.let { name -> ExpenseCategory.custom(it.expense.category!!, name) }
+                it.expense.toDomainModel(if (category != null) mapOf(category.name to category) else emptyMap())
+            }
         }
     }
 
@@ -99,6 +132,9 @@ class OfflineExpenseRepository(
      */
     override suspend fun saveExpense(expense: Expense): Long = withContext(Dispatchers.IO) {
         writes.withLock {
+            expense.category?.takeIf { it.isCustom }?.let { category ->
+                require(database?.customCategoryDao()?.getById(category.name) != null) { "This category is no longer available. Select another category." }
+            }
             val save = {
                 val id = expenseDao.insertExpenseInTransaction(expense.toEntity())
                 aiEnrichmentJobDao?.enqueueJobForExpense(id)

@@ -19,6 +19,7 @@ data class DateGroupedTransactions(
 
 data class TransactionsUiState(
     val searchQuery: String = "",
+    val availableCategories: List<ExpenseCategory> = ExpenseCategory.entries,
     val selectedDateFilter: DateRangeFilter = DateRangeFilter.ALL,
     val selectedCategoryFilter: ExpenseCategory? = null,
     val groupedTransactions: List<DateGroupedTransactions> = emptyList(),

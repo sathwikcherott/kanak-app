@@ -19,8 +19,6 @@ object DatabaseMigrations {
                     `confidence_score` REAL,
                     `ai_reasoning` TEXT,
                     `suggested_tags` TEXT,
-                    `retry_count` INTEGER NOT NULL DEFAULT 0,
-                    `last_attempt_at` INTEGER,
                     `created_at` INTEGER NOT NULL,
                     `updated_at` INTEGER NOT NULL,
                     `error_message` TEXT,
@@ -38,4 +36,11 @@ object DatabaseMigrations {
             db.execSQL("ALTER TABLE `ai_enrichment_jobs` ADD COLUMN `last_attempt_at` INTEGER")
         }
     }
+    val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `custom_categories` (`id` TEXT NOT NULL, `displayName` TEXT NOT NULL, `normalizedName` TEXT NOT NULL, PRIMARY KEY(`id`))")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_custom_categories_normalizedName` ON `custom_categories` (`normalizedName`)")
+        }
+    }
+
 }

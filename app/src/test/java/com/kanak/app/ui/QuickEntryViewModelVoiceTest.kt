@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -39,6 +40,35 @@ class QuickEntryViewModelVoiceTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
+    }
+
+    @Test
+    fun voiceCalculation_savesFullTotalAndOriginalDescription() = runTest {
+        val transcript = "100 / (2 + 3) × 3 bus"
+        val voice = FakeVoiceInputRepository(isAvailable = true, mockTranscript = transcript)
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, voice)
+        viewModel.onMicTapped()
+        viewModel.saveExpense()
+        advanceUntilIdle()
+
+        val saved = fakeExpenseRepository.savedExpenses.single()
+        assertEquals(6000L, saved.amountMinor)
+        assertEquals(transcript, saved.note)
+        assertEquals(ExpenseCategory.TRANSPORT, saved.category)
+    }
+
+    @Test
+    fun incompleteCalculation_clearsPreviousAmountAndBlocksSave() = runTest {
+        val voice = FakeVoiceInputRepository(isAvailable = true, mockTranscript = "25 50 bus")
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, voice)
+        viewModel.onAmountChanged("50")
+        viewModel.onMicTapped()
+        viewModel.saveExpense()
+        advanceUntilIdle()
+
+        assertEquals("", viewModel.uiState.value.amountText)
+        assertEquals("25 50 bus", viewModel.uiState.value.note)
+        assertTrue(fakeExpenseRepository.savedExpenses.isEmpty())
     }
 
     @Test
