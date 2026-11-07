@@ -21,6 +21,7 @@ test("forwards the approved description and returns an allowlisted category", as
   const upstream = t.mock.method(globalThis, "fetch", async (url, options) => {
     assert.match(url, /gemini-3\.8-flash:generateContent$/);
     assert.equal(options.headers["x-goog-api-key"], env.GEMINI_API_KEY);
+    assert.equal(options.redirect, "manual");
     const { contents, generationConfig } = JSON.parse(options.body);
     assert.equal(generationConfig.thinkingConfig.thinkingLevel, "low");
     assert.equal(generationConfig.maxOutputTokens, 1024);
@@ -77,4 +78,14 @@ test("distinguishes exhausted output and timeouts from upstream HTTP errors", as
   const timeout = await worker.fetch(request({ description: "item" }), env);
   assert.equal(timeout.status, 504);
   assert.deepEqual(await timeout.json(), { error: "provider_timeout" });
+});
+
+test("rejects redirects without forwarding the Gemini key to another URL", async (t) => {
+  const upstream = t.mock.method(globalThis, "fetch", async () =>
+    Response.redirect("https://unexpected.example", 302),
+  );
+  const response = await worker.fetch(request({ description: "item" }), env);
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { error: "provider_unavailable", providerStatus: 302 });
+  assert.equal(upstream.mock.callCount(), 1);
 });
