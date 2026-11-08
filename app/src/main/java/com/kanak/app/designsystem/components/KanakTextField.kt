@@ -19,6 +19,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
+import com.kanak.app.voice.MathExpressionParser
 
 @Composable
 fun KanakAmountCard(
@@ -53,7 +55,15 @@ fun KanakAmountCard(
     val borderColor = when {
         isError -> MaterialTheme.colorScheme.error
         isListening -> MaterialTheme.colorScheme.primary
-        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+
+    val liveEvaluated = remember(value) {
+        if (value.any { it in "+-*xX×/÷()" }) {
+            MathExpressionParser.evaluate(value)
+        } else {
+            null
+        }
     }
 
     Column(
@@ -62,7 +72,7 @@ fun KanakAmountCard(
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
             .border(width = 1.5.dp, color = borderColor, shape = shape)
-            .padding(KanakSpacing.large)
+            .padding(KanakSpacing.medium)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -70,7 +80,7 @@ fun KanakAmountCard(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "ENTER AMOUNT",
+                text = "AMOUNT",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.Bold
@@ -82,7 +92,7 @@ fun KanakAmountCard(
                     modifier = Modifier
                         .clip(RoundedCornerShape(KanakCornerRadius.pill))
                         .background(
-                            if (isListening) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            if (isListening) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
                         )
                         .clickable(onClick = onMicTapped)
                         .padding(horizontal = KanakSpacing.small, vertical = KanakSpacing.extraSmall)
@@ -107,14 +117,15 @@ fun KanakAmountCard(
                         Text(
                             text = "🎤 Voice Draft",
                             style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(KanakSpacing.medium))
+        Spacer(modifier = Modifier.height(KanakSpacing.small))
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -154,6 +165,16 @@ fun KanakAmountCard(
                     }
                     innerTextField()
                 }
+            )
+        }
+
+        if (liveEvaluated != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "= $currencySymbol$liveEvaluated",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
         }
 
@@ -213,7 +234,7 @@ fun KanakTextField(
             .fillMaxWidth()
             .clip(shape)
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), shape)
             .padding(horizontal = KanakSpacing.medium, vertical = KanakSpacing.small)
     ) {
         Text(

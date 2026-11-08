@@ -12,13 +12,39 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.kanak.app.designsystem.theme.CategoryBillColor
+import com.kanak.app.designsystem.theme.CategoryEducationColor
+import com.kanak.app.designsystem.theme.CategoryEntertainmentColor
+import com.kanak.app.designsystem.theme.CategoryFoodColor
+import com.kanak.app.designsystem.theme.CategoryGirlfriendColor
+import com.kanak.app.designsystem.theme.CategoryGroceriesColor
+import com.kanak.app.designsystem.theme.CategoryHealthColor
+import com.kanak.app.designsystem.theme.CategoryOtherColor
+import com.kanak.app.designsystem.theme.CategoryShoppingColor
+import com.kanak.app.designsystem.theme.CategoryTransportColor
 import com.kanak.app.model.ExpenseCategory
+
+fun ExpenseCategory.getCategoryColor(): Color = when (this) {
+    ExpenseCategory.GIRLFRIEND -> CategoryGirlfriendColor
+    ExpenseCategory.FOOD -> CategoryFoodColor
+    ExpenseCategory.GROCERIES -> CategoryGroceriesColor
+    ExpenseCategory.TRANSPORT -> CategoryTransportColor
+    ExpenseCategory.BILL -> CategoryBillColor
+    ExpenseCategory.HEALTH -> CategoryHealthColor
+    ExpenseCategory.SHOPPING -> CategoryShoppingColor
+    ExpenseCategory.ENTERTAINMENT -> CategoryEntertainmentColor
+    ExpenseCategory.TECH -> CategoryBillColor
+    ExpenseCategory.GAMES -> CategoryEntertainmentColor
+    ExpenseCategory.EDUCATION -> CategoryEducationColor
+    ExpenseCategory.OTHER -> CategoryOtherColor
+    else -> CategoryOtherColor
+}
 
 @Composable
 fun CategoryIcon(
     category: ExpenseCategory,
-    tint: Color,
     modifier: Modifier = Modifier,
+    tint: Color = category.getCategoryColor(),
     size: Dp = 20.dp
 ) {
     Canvas(modifier = modifier.size(size)) {
