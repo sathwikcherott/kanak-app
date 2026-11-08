@@ -43,4 +43,20 @@ object DatabaseMigrations {
         }
     }
 
+    val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Preserve assignments to earlier custom categories before removing duplicate labels.
+            for ((label, builtInId) in listOf("tech" to "TECH", "games" to "GAMES")) {
+                db.execSQL(
+                    "UPDATE expenses SET category = ? WHERE category IN (SELECT id FROM custom_categories WHERE normalizedName = ?)",
+                    arrayOf(builtInId, label)
+                )
+                db.execSQL(
+                    "UPDATE ai_enrichment_jobs SET suggested_category = ? WHERE suggested_category IN (SELECT id FROM custom_categories WHERE normalizedName = ?)",
+                    arrayOf(builtInId, label)
+                )
+                db.execSQL("DELETE FROM custom_categories WHERE normalizedName = ?", arrayOf(label))
+            }
+        }
+    }
 }

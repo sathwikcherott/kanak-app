@@ -31,6 +31,7 @@ import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.SnackbarHost
@@ -42,8 +43,8 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,6 +57,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.kanak.app.ai.AiDescription
 import com.kanak.app.designsystem.components.CategoryIcon
 import com.kanak.app.designsystem.components.KanakAmountCard
 import com.kanak.app.designsystem.components.KanakCard
@@ -64,6 +66,7 @@ import com.kanak.app.designsystem.components.KanakCategoryCard
 import com.kanak.app.designsystem.components.KanakPrimaryButton
 import com.kanak.app.designsystem.components.KanakSourceBadge
 import com.kanak.app.designsystem.components.KanakTextField
+import com.kanak.app.designsystem.components.getCategoryColor
 import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import com.kanak.app.model.Expense
@@ -90,6 +93,10 @@ fun QuickEntryScreen(
     onNewCategoryNameChanged: (String) -> Unit = {},
     onCreateCategory: () -> Unit = {},
     onCancelNewCategory: () -> Unit = {},
+    aiConfigured: Boolean = false,
+    onRequestAiSuggestion: (String) -> Unit = {},
+    onApplyAiSuggestion: () -> Unit = {},
+    onDismissAiSuggestion: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -118,8 +125,6 @@ fun QuickEntryScreen(
         }
     }
 
-    // Automatic voice entry uses the same permission path as the microphone button.
-    // The sheet host enables this only after the opening transition has completed.
     LaunchedEffect(autoStartVoice) {
         if (autoStartVoice) handleMicClick()
     }
@@ -136,7 +141,7 @@ fun QuickEntryScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Kanak",
+                        text = "New Expense",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -196,13 +201,15 @@ fun QuickEntryScreen(
                     if (MathExpressionParser.hasOperator(uiState.amountText) && amount > 0L) {
                         Text(
                             text = "= ${Expense(amountMinor = amount, currency = uiState.currency).amountWithSymbol()}",
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
                         )
                     } else {
                         Spacer(Modifier.weight(1f))
                     }
                     TextButton(onClick = { calculationKeyboard.value = !calculationKeyboard.value }) {
-                        Text(if (calculationKeyboard.value) "Number keyboard" else "Calculate")
+                        Text(if (calculationKeyboard.value) "Number mode" else "Math expression mode")
                     }
                 }
             }
@@ -236,7 +243,7 @@ fun QuickEntryScreen(
                             val selected = option == uiState.selectedDateOption
                             val shape = RoundedCornerShape(KanakCornerRadius.pill)
                             val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                            val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                            val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                             val textColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
 
                             val displayText = when (option) {
@@ -283,14 +290,29 @@ fun QuickEntryScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "CATEGORY",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(KanakSpacing.small)
+                        ) {
+                            Text(
+                                text = "CATEGORY",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            if (uiState.isRequestingAi) {
+                                Text(
+                                    text = "Finding category…",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = onOpenNewCategory, enabled = !uiState.isSaving && !uiState.isCreatingCategory) { Text("+ New category") }
+                            TextButton(onClick = onOpenNewCategory, enabled = !uiState.isSaving && !uiState.isCreatingCategory) {
+                                Text("+ New category", style = MaterialTheme.typography.labelMedium)
+                            }
                             KanakCategorizationBadge(state = uiState.categorizationState)
                         }
                     }
@@ -364,8 +386,14 @@ fun QuickEntryScreen(
     }
 
     if (uiState.showNewCategoryDialog) {
-        NewCategoryDialog(uiState.newCategoryName, uiState.categoryError, uiState.isCreatingCategory,
-            onNewCategoryNameChanged, onCreateCategory, onCancelNewCategory)
+        NewCategoryDialog(
+            name = uiState.newCategoryName,
+            error = uiState.categoryError,
+            busy = uiState.isCreatingCategory,
+            onNameChanged = onNewCategoryNameChanged,
+            onCreate = onCreateCategory,
+            onCancel = onCancelNewCategory
+        )
     }
 
     if (uiState.showDatePicker) {
@@ -438,6 +466,9 @@ private fun ExpenseItemCard(
     expense: Expense,
     modifier: Modifier = Modifier
 ) {
+    val category = expense.category
+    val catColor = category?.getCategoryColor() ?: MaterialTheme.colorScheme.primary
+
     KanakCard(modifier = modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -448,11 +479,16 @@ private fun ExpenseItemCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(KanakSpacing.medium)
             ) {
-                expense.category?.let { cat ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(KanakCornerRadius.medium))
+                        .background(catColor.copy(alpha = 0.15f))
+                        .padding(10.dp)
+                ) {
                     CategoryIcon(
-                        category = cat,
-                        tint = MaterialTheme.colorScheme.primary,
-                        size = 22.dp
+                        category = category ?: ExpenseCategory.OTHER,
+                        tint = catColor,
+                        size = 20.dp
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

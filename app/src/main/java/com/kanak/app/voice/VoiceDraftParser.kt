@@ -17,6 +17,16 @@ data class VoiceDraft(
  * using deterministic local keyword classification and shared mathematical expression parsing.
  */
 object VoiceDraftParser {
+    private val gamePurchase = Regex(
+        """\b(?:pc games?|steam deck games?|games? keys?|game pass|playstation store|xbox store|nintendo eshop)\b"""
+    )
+    private val techPurchase = Regex(
+        """\b(?:tech|pc|computers?|laptops?|gpus?|cpus?|rtx\s*\d+|rx\s*\d+|graphics cards?|video cards?|processors?|motherboards?|ram|ddr[345]|(?:nvme|ssds?|hdds?)|hard drives?|psus?|power suppl(?:y|ies)|monitors?|keyboards?|mouse|mice|mousepads?|webcams?|docking stations?|gaming headsets?|controllers?|gamepads?|steam deck|consoles?)\b"""
+    )
+    private val games = Regex(
+        """\b(?:games?|gaming|on steam|steam (?:sale|wallet|store|gift card|purchase|credit)|epic games|gog|minecraft|robux|dlc)\b|^\s*(?:\d+\s+)?steam\s*$"""
+    )
+
 
     /**
      * Infer category from transcript/description with priority precedence.
@@ -36,6 +46,10 @@ object VoiceDraftParser {
         if (girlfriendKeywords.any { lower.contains(it) }) {
             return ExpenseCategory.GIRLFRIEND
         }
+
+        if (gamePurchase.containsMatchIn(lower)) return ExpenseCategory.GAMES
+        if (techPurchase.containsMatchIn(lower)) return ExpenseCategory.TECH
+        if (games.containsMatchIn(lower)) return ExpenseCategory.GAMES
 
         // 1. Food & Dining specific dishes & dining terms
         val foodKeywords = listOf(
@@ -92,15 +106,15 @@ object VoiceDraftParser {
         // 6. Shopping (apparel, footwear, electronics)
         val shoppingKeywords = listOf(
             "clothes", "clothing", "shirt", "pants", "tshirt", "t-shirt", "shoes", "dress", "saree", "footwear",
-            "electronics", "mobile", "laptop", "amazon", "flipkart", "myntra", "mall", "shopping"
+            "electronics", "mobile", "amazon", "flipkart", "myntra", "mall", "shopping"
         )
         if (shoppingKeywords.any { lower.contains(it) }) {
             return ExpenseCategory.SHOPPING
         }
 
-        // 7. Entertainment (movies, shows, gaming)
+        // 7. Entertainment (movies and shows)
         val entertainmentKeywords = listOf(
-            "movie", "movies", "cinema", "pvr", "inox", "theatre", "concert", "show", "event", "game", "gaming",
+            "movie", "movies", "cinema", "pvr", "inox", "theatre", "concert", "show", "event",
             "netflix", "prime", "hotstar", "spotify", "ticket"
         )
         if (entertainmentKeywords.any { lower.contains(it) }) {

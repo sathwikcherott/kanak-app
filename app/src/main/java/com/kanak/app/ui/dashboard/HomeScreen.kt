@@ -27,11 +27,13 @@ import com.kanak.app.designsystem.components.CategoryIcon
 import com.kanak.app.designsystem.components.KanakCard
 import com.kanak.app.designsystem.components.KanakPrimaryButton
 import com.kanak.app.designsystem.components.KanakSecondaryButton
+import com.kanak.app.designsystem.components.getCategoryColor
 import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import com.kanak.app.designsystem.theme.StatusError
 import com.kanak.app.designsystem.theme.StatusSuccess
 import com.kanak.app.model.Expense
+import com.kanak.app.model.ExpenseCategory
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,7 +68,7 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     Text(
-                        text = "AMOLED Expense Tracker",
+                        text = "Offline Expense Tracker",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -130,7 +132,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(MaterialTheme.colorScheme.outlineVariant)
+                            .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     )
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -158,12 +160,19 @@ fun HomeScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(KanakSpacing.extraSmall)
                             ) {
-                                Text(
-                                    text = signStr,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    fontWeight = FontWeight.Bold,
-                                    color = badgeColor
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(KanakCornerRadius.pill))
+                                        .background(badgeColor.copy(alpha = 0.15f))
+                                        .padding(horizontal = KanakSpacing.small, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = signStr,
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = badgeColor
+                                    )
+                                }
                                 Text(
                                     text = "vs last month (${uiState.previousTotalFormatted})",
                                     style = MaterialTheme.typography.bodyMedium,
@@ -281,6 +290,7 @@ private fun CategoryBreakdownRow(
     modifier: Modifier = Modifier
 ) {
     val formattedAmount = Expense(amountMinor = item.amountMinor, currency = currency).amountWithSymbol()
+    val catColor = item.category?.getCategoryColor() ?: MaterialTheme.colorScheme.primary
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -298,7 +308,7 @@ private fun CategoryBreakdownRow(
                 item.category?.let { cat ->
                     CategoryIcon(
                         category = cat,
-                        tint = MaterialTheme.colorScheme.primary,
+                        tint = catColor,
                         size = 18.dp
                     )
                 }
@@ -333,7 +343,7 @@ private fun CategoryBreakdownRow(
                 .fillMaxWidth()
                 .height(6.dp)
                 .clip(RoundedCornerShape(KanakCornerRadius.pill)),
-            color = MaterialTheme.colorScheme.primary,
+            color = catColor,
             trackColor = MaterialTheme.colorScheme.surfaceVariant
         )
     }
@@ -346,6 +356,8 @@ private fun DashboardExpenseRow(
 ) {
     val dateFormat = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
     val dateStr = dateFormat.format(Date(expense.occurredAt))
+    val category = expense.category
+    val catColor = category?.getCategoryColor() ?: MaterialTheme.colorScheme.primary
 
     KanakCard(modifier = modifier.fillMaxWidth()) {
         Row(
@@ -357,11 +369,16 @@ private fun DashboardExpenseRow(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(KanakSpacing.medium)
             ) {
-                expense.category?.let { cat ->
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(KanakCornerRadius.medium))
+                        .background(catColor.copy(alpha = 0.15f))
+                        .padding(10.dp)
+                ) {
                     CategoryIcon(
-                        category = cat,
-                        tint = MaterialTheme.colorScheme.primary,
-                        size = 22.dp
+                        category = category ?: ExpenseCategory.OTHER,
+                        tint = catColor,
+                        size = 20.dp
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {

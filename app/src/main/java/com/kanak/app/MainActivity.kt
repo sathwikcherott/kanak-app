@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
         val app = application as KanakApp
         QuickEntryViewModel.Factory(
             repository = app.expenseRepository,
-            voiceInputRepository = app.voiceInputRepository
+            voiceInputRepository = app.voiceInputRepository,
+            aiCategorizer = app.cloudAiCategorizer
         )
     }
 
@@ -84,6 +85,8 @@ class MainActivity : ComponentActivity() {
         )
         setContent {
             val context = LocalContext.current
+            val aiConnection = (application as KanakApp).aiConnectionStore
+            val aiEndpoint by aiConnection.endpoint.collectAsState()
             var showBackupFiles by rememberSaveable { mutableStateOf(false) }
             var showExitDialog by remember { mutableStateOf(value = false) }
 
@@ -181,6 +184,7 @@ class MainActivity : ComponentActivity() {
                                 onCurrencySelected = settingsViewModel::onCurrencySelected,
                                 onExportBackup = settingsViewModel::exportBackup,
                                 onManageBackupFiles = { showBackupFiles = true },
+                                aiConnection = aiConnection,
                                 onRestoreFileSelected = settingsViewModel::onRestoreFileSelected,
                                 onConfirmRestore = settingsViewModel::confirmRestore,
                                 onCancelRestore = settingsViewModel::cancelRestore,
@@ -193,7 +197,8 @@ class MainActivity : ComponentActivity() {
 
                     QuickEntrySheet(
                         homeViewModel = homeViewModel,
-                        entryViewModel = quickEntryViewModel
+                        entryViewModel = quickEntryViewModel,
+                        aiConfigured = aiEndpoint != null
                     )
 
                     if (showBackupFiles) {

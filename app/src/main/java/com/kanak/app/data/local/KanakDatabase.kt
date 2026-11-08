@@ -14,7 +14,7 @@ import com.kanak.app.data.local.migrations.DatabaseMigrations
 
 @Database(
     entities = [ExpenseEntity::class, AiEnrichmentJobEntity::class, CustomCategoryEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class KanakDatabase : RoomDatabase() {
@@ -33,7 +33,12 @@ abstract class KanakDatabase : RoomDatabase() {
                     KanakDatabase::class.java,
                     "kanak_expenses.db"
                 )
-                    .addMigrations(DatabaseMigrations.MIGRATION_1_2, DatabaseMigrations.MIGRATION_2_3, DatabaseMigrations.MIGRATION_3_4)
+                    .addMigrations(
+                        DatabaseMigrations.MIGRATION_1_2,
+                        DatabaseMigrations.MIGRATION_2_3,
+                        DatabaseMigrations.MIGRATION_3_4,
+                        DatabaseMigrations.MIGRATION_4_5
+                    )
                     .build()
                 INSTANCE = instance
                 instance

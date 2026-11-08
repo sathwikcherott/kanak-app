@@ -20,8 +20,10 @@ class ExpenseCategory private constructor(val name: String, val displayName: Str
         val HEALTH = ExpenseCategory("HEALTH", "Health")
         val ENTERTAINMENT = ExpenseCategory("ENTERTAINMENT", "Entertainment")
         val EDUCATION = ExpenseCategory("EDUCATION", "Education")
+        val TECH = ExpenseCategory("TECH", "Tech")
+        val GAMES = ExpenseCategory("GAMES", "Games")
         val OTHER = ExpenseCategory("OTHER", "Other")
-        val entries: List<ExpenseCategory> = listOf(GIRLFRIEND, FOOD, GROCERIES, TRANSPORT, SHOPPING, BILL, HEALTH, ENTERTAINMENT, EDUCATION, OTHER)
+        val entries: List<ExpenseCategory> = listOf(GIRLFRIEND, FOOD, GROCERIES, TRANSPORT, SHOPPING, BILL, HEALTH, ENTERTAINMENT, EDUCATION, TECH, GAMES, OTHER)
         const val MAX_CUSTOM_CATEGORIES = 100
         const val MAX_NAME_LENGTH = 40
 
@@ -46,10 +48,22 @@ class ExpenseCategory private constructor(val name: String, val displayName: Str
         }
 
         fun custom(id: String, label: String): ExpenseCategory {
+            val category = fromBackupCustom(id, label)
+            require(category.isCustom) { "This category already exists" }
+            return category
+        }
+
+        internal fun fromBackupCustom(id: String, label: String): ExpenseCategory {
             require(id.matches(Regex("custom:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"))) { "Invalid custom category ID" }
             val cleaned = cleanName(label)
-            require(!isBuiltInName(cleaned)) { "This category already exists" }
-            return ExpenseCategory(id, cleaned)
+            return when (normalizedName(cleaned)) {
+                "tech" -> TECH
+                "games" -> GAMES
+                else -> {
+                    require(!isBuiltInName(cleaned)) { "This category already exists" }
+                    ExpenseCategory(id, cleaned)
+                }
+            }
         }
     }
 }

@@ -25,6 +25,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -32,6 +33,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -44,7 +46,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.kanak.app.ai.AiConnectionStore
 import com.kanak.app.data.backup.BackupSummary
 import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.designsystem.components.KanakCard
@@ -82,7 +86,8 @@ fun SettingsScreen(
     onClearBackupError: () -> Unit,
     onClearUserMessage: () -> Unit,
     modifier: Modifier = Modifier,
-    onManageBackupFiles: () -> Unit = {}
+    onManageBackupFiles: () -> Unit = {},
+    aiConnection: AiConnectionStore? = null,
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -177,7 +182,7 @@ fun SettingsScreen(
                 }
 
                 item {
-                    AiCategorizationSection()
+                    if (aiConnection != null) AiCategorizationSection(aiConnection)
                 }
 
                 item {
@@ -653,56 +658,82 @@ private fun CurrencySelectionDialog(
 }
 
 @Composable
-private fun AiCategorizationSection(
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)
-    ) {
+private fun AiCategorizationSection(connection: AiConnectionStore) {
+    val endpoint by connection.endpoint.collectAsState()
+    var showSetup by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
         Text(
-            text = "AI CATEGORIZATION (PREVIEW)",
+            text = "AI CATEGORIZATION",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
-
         KanakCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Cloud AI Categorization",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
+                Text(
+                    text = endpoint?.let { "Configured for ${java.net.URI(it).host}" } ?: "Cloud suggestions are off",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = "Quick Entry can ask Gemini for a built-in category when local rules find no match. You choose when to share the previewed description and whether to use the suggestion.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+                    TextButton(onClick = { showSetup = true }) {
+                        Text(if (endpoint == null) "Configure" else "Edit connection")
+                    }
+                    if (endpoint != null) {
+                        TextButton(onClick = connection::disconnect) { Text("Disconnect") }
+                    }
+                }
+            }
+        }
+    }
 
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(KanakCornerRadius.pill))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = KanakSpacing.small, vertical = 2.dp)
-                    ) {
+    if (showSetup) {
+        var address by remember { mutableStateOf(endpoint.orEmpty()) }
+        var token by remember { mutableStateOf("") }
+        var showError by remember { mutableStateOf(false) }
+        AlertDialog(
+            onDismissRequest = { showSetup = false },
+            title = { Text("Configure cloud suggestions") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+                    Text("Enter your private backend URL and its access token.")
+                    OutlinedTextField(
+                        value = address,
+                        onValueChange = {
+                            address = it
+                            showError = false
+                        },
+                        singleLine = true,
+                        label = { Text("HTTPS endpoint") }
+                    )
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = {
+                            token = it
+                            showError = false
+                        },
+                        singleLine = true,
+                        label = { Text("Backend access token") },
+                        visualTransformation = PasswordVisualTransformation()
+                    )
+                    if (showError) {
                         Text(
-                            text = "OFFLINE / PREVIEW",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
+                            "Use an HTTPS URL ending in /categorize and a valid backend access token.",
+                            color = MaterialTheme.colorScheme.error
                         )
                     }
                 }
-
-                Text(
-                    text = "Automatic cloud AI expense categorization is currently not connected. Expenses are categorized offline using local rules. Cloud provider integration and API keys will be configured in a future update.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (connection.configure(address, token)) showSetup = false else showError = true
+                }) { Text("Save connection") }
+            },
+            dismissButton = { TextButton(onClick = { showSetup = false }) { Text("Cancel") } }
+        )
     }
 }
 
