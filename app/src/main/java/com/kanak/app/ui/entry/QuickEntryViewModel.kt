@@ -25,6 +25,7 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import java.util.TimeZone
 
@@ -87,18 +88,98 @@ class QuickEntryViewModel(
         }
     }
 
-    private var aiRequest: Job? = null
+    private var aiRequestJob: Job? = null
+    private var lastAiRequestedNote: String? = null
+
+    private fun triggerAutomaticAiCategorization() {
+        aiRequestJob?.cancel()
+        aiRequestJob = null
+
+        val categorizer = aiCategorizer ?: return
+        val state = _uiState.value
+
+        if (state.categorizationState == CategorizationState.CONFIRMED) return
+        if (state.isSaving || state.isListening || state.isCreatingCategory) return
+
+        val currentNote = state.note
+        val description = AiDescription.forSuggestion(currentNote)
+
+        if (description.none(Char::isLetter)) {
+            _uiState.update { it.copy(isRequestingAi = false, aiSuggestion = null, aiMessage = null) }
+            return
+        }
+
+        if (description == lastAiRequestedNote && state.selectedCategory != null) {
+            return
+        }
+
+        aiRequestJob = viewModelScope.launch {
+            delay(700L)
+            ensureActive()
+
+            val latestBeforeRequest = _uiState.value
+            if (latestBeforeRequest.categorizationState == CategorizationState.CONFIRMED ||
+                latestBeforeRequest.isSaving || latestBeforeRequest.isListening
+            ) return@launch
+
+            _uiState.update { it.copy(isRequestingAi = true, aiSuggestion = null, aiMessage = null) }
+            lastAiRequestedNote = description
+
+            val result = try {
+                categorizer.categorizeExpense(AiCategorizationRequest(note = description))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+
+            ensureActive()
+
+            val latestState = _uiState.value
+            if (latestState.note != currentNote || latestState.categorizationState == CategorizationState.CONFIRMED) {
+                _uiState.update { it.copy(isRequestingAi = false) }
+                return@launch
+            }
+
+            val suggestion = result.getOrNull()?.suggestedCategory?.takeIf { cat ->
+                latestState.availableCategories.any { it.name == cat.name }
+            }
+            val failure = result.exceptionOrNull()
+
+            _uiState.update { current ->
+                if (current.note == currentNote && current.categorizationState != CategorizationState.CONFIRMED) {
+                    if (suggestion != null) {
+                        current.copy(
+                            isRequestingAi = false,
+                            selectedCategory = suggestion,
+                            categorizationState = CategorizationState.AUTO_CATEGORIZED,
+                            aiSuggestion = suggestion,
+                            aiMessage = failure?.let { (it as? AiConnectionFailure)?.userMessage }
+                        )
+                    } else {
+                        current.copy(
+                            isRequestingAi = false,
+                            aiMessage = failure?.let { (it as? AiConnectionFailure)?.userMessage }
+                        )
+                    }
+                } else {
+                    current.copy(isRequestingAi = false)
+                }
+            }
+        }
+    }
 
     fun requestAiSuggestion(preview: String) {
         val categorizer = aiCategorizer ?: return
         val state = _uiState.value
-        if (state.selectedCategory != null || state.isSaving || state.isListening ||
-            state.isRequestingAi || preview != AiDescription.forSuggestion(state.note) ||
-            preview.none(Char::isLetter)
-        ) return
+        if (state.selectedCategory != null && state.categorizationState == CategorizationState.CONFIRMED) return
+        if (state.isSaving || state.isListening || preview.none(Char::isLetter)) return
 
+        aiRequestJob?.cancel()
         _uiState.update { it.copy(isRequestingAi = true, aiSuggestion = null, aiMessage = null) }
-        aiRequest = viewModelScope.launch {
+        lastAiRequestedNote = preview
+
+        aiRequestJob = viewModelScope.launch {
             val result = try {
                 categorizer.categorizeExpense(AiCategorizationRequest(note = preview))
             } catch (e: CancellationException) {
@@ -107,19 +188,36 @@ class QuickEntryViewModel(
                 Result.failure(e)
             }
             ensureActive()
-            val suggestion = result.getOrNull()?.suggestedCategory?.takeIf { it in ExpenseCategory.entries }
+            val latestState = _uiState.value
+            if (latestState.categorizationState == CategorizationState.CONFIRMED) {
+                _uiState.update { it.copy(isRequestingAi = false) }
+                return@launch
+            }
+
+            val suggestion = result.getOrNull()?.suggestedCategory?.takeIf { cat ->
+                latestState.availableCategories.any { it.name == cat.name }
+            }
             val failure = result.exceptionOrNull()
-            _uiState.update {
-                it.copy(
-                    isRequestingAi = false,
-                    aiSuggestion = suggestion,
-                    aiMessage = when {
-                        failure is AiConnectionFailure -> failure.userMessage
-                        failure != null -> "AI is unavailable. You can still save or pick a category."
-                        suggestion == null -> "AI did not find a category."
-                        else -> null
+
+            _uiState.update { current ->
+                if (current.categorizationState != CategorizationState.CONFIRMED) {
+                    if (suggestion != null) {
+                        current.copy(
+                            isRequestingAi = false,
+                            selectedCategory = suggestion,
+                            categorizationState = CategorizationState.AUTO_CATEGORIZED,
+                            aiSuggestion = suggestion,
+                            aiMessage = failure?.let { (it as? AiConnectionFailure)?.userMessage }
+                        )
+                    } else {
+                        current.copy(
+                            isRequestingAi = false,
+                            aiMessage = failure?.let { (it as? AiConnectionFailure)?.userMessage }
+                        )
                     }
-                )
+                } else {
+                    current.copy(isRequestingAi = false)
+                }
             }
         }
     }
@@ -132,8 +230,8 @@ class QuickEntryViewModel(
     }
 
     fun clearAiSuggestion() {
-        aiRequest?.cancel()
-        aiRequest = null
+        aiRequestJob?.cancel()
+        aiRequestJob = null
         _uiState.update {
             it.copy(isRequestingAi = false, aiSuggestion = null, aiMessage = null)
         }
@@ -199,6 +297,7 @@ class QuickEntryViewModel(
                 )
             }
         }
+        triggerAutomaticAiCategorization()
     }
 
     private var voiceDraftGeneration = 0
@@ -329,6 +428,7 @@ class QuickEntryViewModel(
                         userMessage = userMsg
                     )
                 }
+                triggerAutomaticAiCategorization()
             },
             onError = voiceError@{ error ->
                 if (generation != voiceDraftGeneration) return@voiceError

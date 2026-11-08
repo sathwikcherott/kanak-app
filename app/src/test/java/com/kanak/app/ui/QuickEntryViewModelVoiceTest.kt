@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -52,23 +53,30 @@ class QuickEntryViewModelVoiceTest {
     }
 
     @Test
-    fun aiSuggestion_sendsOnlyPreviewAndRequiresAcceptance() = runTest {
-        val ai = FakeCloudAiCategorizer()
+    fun automaticAiCategorization_triggersOnTypingWithDebounce() = runTest {
+        val ai = FakeCloudAiCategorizer(
+            mockResult = AiCategorizationResult(
+                suggestedCategory = ExpenseCategory.FOOD,
+                confidenceScore = 0.95f,
+                reasoning = "Inferred food"
+            )
+        )
         val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
-        val note = "₹250.50 acetaminophen"
+        val note = "acetaminophen"
         viewModel.onAmountChanged("250.50")
         viewModel.onNoteChanged(note)
-        val preview = AiDescription.forSuggestion(note)
-        assertEquals("acetaminophen", preview)
+
+        // Before 700ms debounce completes, no AI request sent yet
         assertNull(ai.lastRequest)
 
-        viewModel.requestAiSuggestion(preview)
+        // Advance 700ms debounce
+        advanceTimeBy(700L)
         advanceUntilIdle()
 
-        assertEquals(AiCategorizationRequest(preview), ai.lastRequest)
-        assertNull(viewModel.uiState.value.selectedCategory)
-        assertEquals(ExpenseCategory.FOOD, viewModel.uiState.value.aiSuggestion)
-        viewModel.applyAiSuggestion()
+        assertEquals(AiCategorizationRequest("acetaminophen"), ai.lastRequest)
+        assertEquals(ExpenseCategory.FOOD, viewModel.uiState.value.selectedCategory)
+        assertEquals(CategorizationState.AUTO_CATEGORIZED, viewModel.uiState.value.categorizationState)
+
         viewModel.saveExpense()
         advanceUntilIdle()
 
@@ -76,7 +84,6 @@ class QuickEntryViewModelVoiceTest {
         assertEquals(25050L, expense.amountMinor)
         assertEquals(note, expense.note)
         assertEquals(ExpenseCategory.FOOD, expense.category)
-        assertEquals(CategorizationState.CONFIRMED, expense.categorizationState)
     }
 
     @Test
@@ -87,7 +94,8 @@ class QuickEntryViewModelVoiceTest {
         }
         val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
         viewModel.onNoteChanged("acetaminophen")
-        viewModel.requestAiSuggestion("acetaminophen")
+
+        advanceTimeBy(700L)
         runCurrent()
         assertTrue(viewModel.uiState.value.isRequestingAi)
 
@@ -96,8 +104,8 @@ class QuickEntryViewModelVoiceTest {
         advanceUntilIdle()
 
         assertFalse(viewModel.uiState.value.isRequestingAi)
-        assertNull(viewModel.uiState.value.aiSuggestion)
         assertEquals(ExpenseCategory.HEALTH, viewModel.uiState.value.selectedCategory)
+        assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
     }
 
     @Test
@@ -106,18 +114,20 @@ class QuickEntryViewModelVoiceTest {
         val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
         viewModel.onAmountChanged("25")
         viewModel.onNoteChanged("acetaminophen")
-        viewModel.requestAiSuggestion("acetaminophen")
+
+        advanceTimeBy(700L)
         advanceUntilIdle()
 
-        assertNotNull(viewModel.uiState.value.aiMessage)
+        assertFalse(viewModel.uiState.value.isRequestingAi)
         assertTrue(viewModel.uiState.value.isValidInput)
+
         viewModel.saveExpense()
         advanceUntilIdle()
         assertNull(fakeExpenseRepository.savedExpenses.single().category)
     }
 
     @Test
-    fun aiConnectionFailure_showsSafeDiagnosticAndKeepsDraft() = runTest {
+    fun aiConnectionFailure_keepsDraftAndAllowsManualSelection() = runTest {
         val message = "The AI backend rejected the access token (HTTP 401). Edit the connection in Settings."
         val ai = object : CloudAiCategorizer {
             override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> =
@@ -126,13 +136,13 @@ class QuickEntryViewModelVoiceTest {
         val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
         viewModel.onAmountChanged("25")
         viewModel.onNoteChanged("acetaminophen")
-        viewModel.requestAiSuggestion("acetaminophen")
+
+        advanceTimeBy(700L)
         advanceUntilIdle()
 
-        assertEquals(message, viewModel.uiState.value.aiMessage)
+        assertFalse(viewModel.uiState.value.isRequestingAi)
         assertEquals("acetaminophen", viewModel.uiState.value.note)
         assertTrue(viewModel.uiState.value.isValidInput)
-        assertNull(viewModel.uiState.value.aiSuggestion)
     }
 
     @Test
