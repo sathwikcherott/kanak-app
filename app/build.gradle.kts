@@ -25,6 +25,10 @@ android {
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".autobackuppreview"
+        }
+
         release {
             isMinifyEnabled = false
             proguardFiles(
