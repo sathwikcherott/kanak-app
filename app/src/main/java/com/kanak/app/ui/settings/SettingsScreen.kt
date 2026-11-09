@@ -88,6 +88,7 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onManageBackupFiles: () -> Unit = {},
     aiConnection: AiConnectionStore? = null,
+    autoBackupContent: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -180,6 +181,8 @@ fun SettingsScreen(
                         }
                     )
                 }
+
+                item { autoBackupContent() }
 
                 item {
                     if (aiConnection != null) AiCategorizationSection(aiConnection)

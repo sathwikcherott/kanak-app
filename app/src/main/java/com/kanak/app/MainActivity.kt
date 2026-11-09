@@ -38,6 +38,7 @@ import com.kanak.app.ui.settings.SettingsScreen
 import com.kanak.app.ui.settings.SettingsViewModel
 import com.kanak.app.ui.transactions.TransactionsViewModel
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.kanak.app.ui.settings.AutoBackupSection
 import com.kanak.app.ui.settings.BackupFilesRoute
 import com.kanak.app.ui.settings.BackupFilesViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -185,6 +186,9 @@ class MainActivity : ComponentActivity() {
                                 onExportBackup = settingsViewModel::exportBackup,
                                 onManageBackupFiles = { showBackupFiles = true },
                                 aiConnection = aiConnection,
+                                autoBackupContent = {
+                                    AutoBackupSection((application as KanakApp).autoBackupController)
+                                },
                                 onRestoreFileSelected = settingsViewModel::onRestoreFileSelected,
                                 onConfirmRestore = settingsViewModel::confirmRestore,
                                 onCancelRestore = settingsViewModel::cancelRestore,

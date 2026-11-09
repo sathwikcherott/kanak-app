@@ -11,7 +11,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
-class AndroidBackupDocumentStore(private val resolver: ContentResolver) : BackupDocumentStore {
+class AndroidBackupDocumentStore(private val resolver: ContentResolver) : WritableBackupDocumentStore {
     constructor(context: Context) : this(context.applicationContext.contentResolver)
 
     override suspend fun children(folder: String): List<BackupDocument> = withContext(Dispatchers.IO) {
@@ -50,6 +50,21 @@ class AndroidBackupDocumentStore(private val resolver: ContentResolver) : Backup
             }
             output.toByteArray()
         } ?: error("Cannot open this file")
+    }
+
+    override suspend fun create(folder: String, name: String): String = withContext(Dispatchers.IO) {
+        val tree = Uri.parse(folder)
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        checkNotNull(DocumentsContract.createDocument(resolver, parent, "application/json", name)) {
+            "Could not create an automatic backup in this folder."
+        }.toString()
+    }
+
+    override suspend fun write(document: String, bytes: ByteArray) = withContext(Dispatchers.IO) {
+        val output = checkNotNull(resolver.openOutputStream(Uri.parse(document), "wt")) {
+            "Could not open the automatic backup for writing."
+        }
+        output.use { it.write(bytes) }
     }
 
     override suspend fun delete(document: String): Boolean = withContext(Dispatchers.IO) {
