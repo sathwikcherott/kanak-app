@@ -26,7 +26,7 @@ class AutomaticBackupTest {
         store.add("manual", "Kanak_Backup_manual.json", now)
         backup.run(folder, "another-owner", AutoBackupFrequency.DAILY, now, zone)
         val other = store.documents.keys.last()
-        val timestamps = (9..12).map { at("2026-11-$it") }
+        val timestamps = (10..13).map { at("2026-11-$it") }
         for (timestamp in timestamps) {
             now = timestamp
             assertFalse(backup.run(folder, owner, AutoBackupFrequency.DAILY, now, zone).cleanupFailed)
@@ -42,12 +42,12 @@ class AutomaticBackupTest {
     }
 
     @Test fun corruptWriteCannotDeletePreviousBackups() = runBlocking {
-        for (day in 9..11) {
+        for (day in 10..12) {
             now = at("2026-11-$day")
             backup.run(folder, owner, AutoBackupFrequency.DAILY, now, zone)
         }
         val before = store.documents.keys.toSet()
-        now = at("2026-11-12")
+        now = at("2026-11-13")
         store.corruptWrites = true
         val error = runCatching { backup.run(folder, owner, AutoBackupFrequency.DAILY, now, zone) }
         assertTrue(error.isFailure)
@@ -56,11 +56,11 @@ class AutomaticBackupTest {
     }
 
     @Test fun retentionCanRetryWithoutCreatingAnExtraBackup() = runBlocking {
-        for (day in 9..11) {
+        for (day in 10..12) {
             now = at("2026-11-$day")
             backup.run(folder, owner, AutoBackupFrequency.DAILY, now, zone)
         }
-        now = at("2026-11-12")
+        now = at("2026-11-13")
         store.blockedDeletion = store.documents.keys.first()
         assertTrue(backup.run(folder, owner, AutoBackupFrequency.DAILY, now, zone).cleanupFailed)
         assertEquals(4, store.documents.size)
