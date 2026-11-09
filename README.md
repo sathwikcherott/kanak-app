@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/media/kanak-hero.svg" width="100%" alt="Kanak, an offline-first expense tracker for Android">
+  <img src="docs/media/kanak-readme-motion.gif" width="100%" alt="Kanak: log an expense, review daily spending, and keep a local backup. Animated chart uses sample data.">
 </p>
 
 <h1 align="center">Kanak</h1>
