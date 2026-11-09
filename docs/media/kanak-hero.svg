@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
+  <title id="title">Kanak</title>
+  <desc id="desc">A mint K on charcoal beside a stylized expense receipt. Offline-first expense tracking for Android.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#101d19"/>
+      <stop offset=".6" stop-color="#0b1311"/>
+      <stop offset="1" stop-color="#111d19"/>
+    </linearGradient>
+    <linearGradient id="receipt" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#20312b"/>
+      <stop offset="1" stop-color="#13201c"/>
+    </linearGradient>
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M28 0H0V28" fill="none" stroke="#93b5a7" stroke-opacity=".11"/>
+    </pattern>
+    <clipPath id="bounds"><rect width="1120" height="420" rx="30"/></clipPath>
+  </defs>
+  <g clip-path="url(#bounds)">
+    <path fill="url(#bg)" d="M0 0h1120v420H0z"/>
+    <path fill="url(#grid)" d="M650 0h470v420H650z"/>
+    <circle cx="913" cy="209" r="164" fill="none" stroke="#324940" stroke-dasharray="3 8"/>
+    <circle cx="913" cy="209" r="145" fill="none" stroke="#233b32"/>
+    <g transform="translate(70 59)">
+      <rect width="68" height="68" rx="17" fill="#152721" stroke="#39574c"/>
+      <path transform="translate(1.6 1.6) scale(.6)" fill="#36e2ac" d="M32,29 H42.4 Q44.6,29 44.6,31.2 V47.6 L62.5,29.7 Q63.2,29 64.2,29 H75.2 C77.3,29 78.1,31.5 76.7,33 L55.6,54 L76.7,75.2 C78.1,76.7 77.3,79 75.2,79 H62.7 Q61.6,79 60.8,78.2 L44.6,62 V76.8 Q44.6,79 42.4,79 H32 Q29.8,79 29.8,76.8 V31.2 Q29.8,29 32,29 Z"/>
+    </g>
+    <g font-family="system-ui,Segoe UI,Arial,sans-serif">
+      <text x="158" y="99" fill="#9cb9ad" font-size="15" font-weight="700" letter-spacing="3.4">PERSONAL FINANCE / ANDROID</text>
+      <text x="65" y="225" fill="#f0faf5" font-size="112" font-weight="750" letter-spacing="-7">Kanak</text>
+      <text x="72" y="276" fill="#bad3c8" font-size="25">An offline-first expense tracker.</text>
+      <g font-size="15" font-weight="650">
+        <rect x="71" y="318" width="131" height="38" rx="19" fill="#17342a"/>
+        <text x="136.5" y="342" text-anchor="middle" fill="#81ebc6">Quick Entry</text>
+        <rect x="211" y="318" width="116" height="38" rx="19" fill="#172720"/>
+        <text x="269" y="342" text-anchor="middle" fill="#c1d6cc">Analytics</text>
+        <rect x="336" y="318" width="142" height="38" rx="19" fill="#172720"/>
+        <text x="407" y="342" text-anchor="middle" fill="#c1d6cc">Local backups</text>
+      </g>
+    </g>
+    <g transform="rotate(8 913 209)">
+      <rect x="796" y="80" width="228" height="262" rx="20" fill="#06100c" opacity=".65"/>
+      <path d="M820 66h184a20 20 0 0 1 20 20v230l-19-10-19 10-19-10-19 10-19-10-19 10-19-10-19 10-19-10-19 10-19-10-19 10V86a20 20 0 0 1 20-20Z" fill="url(#receipt)" stroke="#48675b"/>
+      <g stroke="#36e2ac" stroke-width="2" stroke-linecap="round" fill="none">
+        <rect x="824" y="95" width="30" height="35" rx="4"/>
+        <path d="M831 106h16m-16 6h16m-16 6h10"/>
+      </g>
+      <g fill="none" stroke-linecap="round" stroke-width="6">
+        <path d="M871 106h95m-95 13h63" stroke="#83aa9b"/>
+        <path d="M826 170h93m-93 27h75m-75 27h105m-105 47h64" stroke="#537165"/>
+        <path d="M965 170h28m-24 27h24m-30 27h30" stroke="#acc9bd"/>
+        <path d="M951 271h42" stroke="#36e2ac"/>
+      </g>
+      <path d="M825 147h172m-172 101h172" stroke="#567467" stroke-dasharray="3 5"/>
+    </g>
+    <g fill="#36e2ac">
+      <circle cx="753" cy="109" r="5"/>
+      <circle cx="1056" cy="282" r="4"/>
+      <circle cx="779" cy="327" r="3"/>
+    </g>
+  </g>
+  <rect x=".5" y=".5" width="1119" height="419" rx="29.5" fill="none" stroke="#2d443b"/>
+</svg>

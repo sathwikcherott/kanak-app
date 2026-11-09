@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="363" viewBox="0 0 760 363" role="img" aria-labelledby="title desc">
+  <title id="title">Illustrative weekly spending</title>
+  <desc id="desc">Example in rupees. Monday 150, Tuesday 260, Wednesday 170, Thursday 320, Friday 240, Saturday 100, Sunday 60. Total 1,300.</desc>
+  <rect x=".5" y=".5" width="759" height="362" rx="25" fill="#111b17" stroke="#304a3e"/>
+  <g font-family="system-ui,Segoe UI,Arial,sans-serif">
+    <text x="32" y="42" fill="#8ae7c3" font-size="15" font-weight="700" letter-spacing="2">ANALYTICS / SAMPLE DATA</text>
+    <text x="31" y="82" fill="#eefaf4" font-size="32" font-weight="700">Daily spending</text>
+    <text x="727" y="43" text-anchor="end" fill="#a8bdb3" font-size="14">7-DAY TOTAL</text>
+    <text x="727" y="80" text-anchor="end" fill="#36e2ac" font-size="29" font-weight="700">₹1,300</text>
+    <g stroke="#385347" stroke-width="1" fill="none">
+      <path d="M78 121h645m-645 48h645m-645 48h645m-645 48h645m-645 48h645"/>
+    </g>
+    <g fill="#aec5b9" text-anchor="end" font-size="14">
+      <text x="65" y="126">₹400</text><text x="65" y="174">₹300</text><text x="65" y="222">₹200</text><text x="65" y="270">₹100</text><text x="65" y="318">₹0</text>
+    </g>
+    <g fill="#4b9f82">
+      <rect x="100" y="241" width="53" height="72" rx="6"/>
+      <rect x="192" y="188.2" width="53" height="124.8" rx="6"/>
+      <rect x="284" y="231.4" width="53" height="81.6" rx="6"/>
+      <rect x="376" y="159.4" width="53" height="153.6" rx="6" fill="#36e2ac"/>
+      <rect x="468" y="197.8" width="53" height="115.2" rx="6"/>
+      <rect x="560" y="265" width="53" height="48" rx="6"/>
+      <rect x="652" y="284.2" width="53" height="28.8" rx="6"/>
+    </g>
+    <g fill="#c8ded2" font-size="15" text-anchor="middle">
+      <text x="126.5" y="340">Mon</text><text x="218.5" y="340">Tue</text><text x="310.5" y="340">Wed</text><text x="402.5" y="340" fill="#82edc6">Thu</text><text x="494.5" y="340">Fri</text><text x="586.5" y="340">Sat</text><text x="678.5" y="340">Sun</text>
+    </g>
+    <text x="402.5" y="147" text-anchor="middle" fill="#a2f4d5" font-size="15" font-weight="700">₹320</text>
+  </g>
+</svg>
