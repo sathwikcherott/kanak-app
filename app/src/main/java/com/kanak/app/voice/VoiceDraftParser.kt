@@ -43,7 +43,7 @@ object VoiceDraftParser {
             "swathi", "swati", "swathy", "swathi's", "swati's", "swathy's",
             "for swathi", "for swati", "with swathi", "with swati", "swathi's birthday"
         )
-        if (girlfriendKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, girlfriendKeywords)) {
             return ExpenseCategory.GIRLFRIEND
         }
 
@@ -59,7 +59,7 @@ object VoiceDraftParser {
             "restaurant", "restaurant bill", "hotel", "swiggy", "zomato", "cafe", "dhaba", "dining", "dinner", "lunch",
             "breakfast", "tea", "coffee", "snack", "snacks", "bakery", "cake", "ice cream", "dessert", "food"
         )
-        if (foodKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, foodKeywords)) {
             return ExpenseCategory.FOOD
         }
 
@@ -70,7 +70,7 @@ object VoiceDraftParser {
             "oil", "cooking oil", "ghee", "spices", "masala", "salt", "sugar", "groceries", "grocery", "grocery shopping",
             "supermarket", "jiomart", "bigbasket", "blinkit", "zepto", "instamart", "fruits", "apple", "banana"
         )
-        if (groceryKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, groceryKeywords)) {
             return ExpenseCategory.GROCERIES
         }
 
@@ -80,7 +80,7 @@ object VoiceDraftParser {
             "metro", "subway", "train", "flight", "auto", "rickshaw", "parking", "parking fee", "toll", "fastag",
             "bike service", "car service", "puncture", "mechanic", "bmtc"
         )
-        if (transportKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, transportKeywords)) {
             return ExpenseCategory.TRANSPORT
         }
 
@@ -90,7 +90,7 @@ object VoiceDraftParser {
             "internet", "wifi", "broadband", "recharge", "mobile recharge", "postpaid", "prepaid", "phone bill",
             "rent", "house rent", "maintenance", "utility", "utility bill", "dth", "tata play"
         )
-        if (billKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, billKeywords)) {
             return ExpenseCategory.BILL
         }
 
@@ -99,7 +99,7 @@ object VoiceDraftParser {
             "doctor", "doctor fee", "consultation", "medicine", "medicines", "pharmacy", "chemist", "apollo",
             "hospital", "clinic", "lab test", "blood test", "health", "medical"
         )
-        if (healthKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, healthKeywords)) {
             return ExpenseCategory.HEALTH
         }
 
@@ -108,7 +108,7 @@ object VoiceDraftParser {
             "clothes", "clothing", "shirt", "pants", "tshirt", "t-shirt", "shoes", "dress", "saree", "footwear",
             "electronics", "mobile", "amazon", "flipkart", "myntra", "mall", "shopping"
         )
-        if (shoppingKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, shoppingKeywords)) {
             return ExpenseCategory.SHOPPING
         }
 
@@ -117,7 +117,7 @@ object VoiceDraftParser {
             "movie", "movies", "cinema", "pvr", "inox", "theatre", "concert", "show", "event",
             "netflix", "prime", "hotstar", "spotify", "ticket"
         )
-        if (entertainmentKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, entertainmentKeywords)) {
             return ExpenseCategory.ENTERTAINMENT
         }
 
@@ -126,7 +126,7 @@ object VoiceDraftParser {
             "school", "college", "tuition", "tuition fee", "school fee", "college fee", "books", "book",
             "stationery", "course", "udemy", "exam fee"
         )
-        if (educationKeywords.any { lower.contains(it) }) {
+        if (containsKeyword(lower, educationKeywords)) {
             return ExpenseCategory.EDUCATION
         }
 
@@ -134,6 +134,13 @@ object VoiceDraftParser {
             Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(category.displayName) + "(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE).containsMatchIn(text)
         }
         return customMatches.singleOrNull()
+    }
+
+    private fun containsKeyword(text: String, keywords: List<String>): Boolean {
+        return keywords.any { keyword ->
+            val regex = Regex("(?<![\\p{L}\\p{N}])" + Regex.escape(keyword.lowercase()) + "(?![\\p{L}\\p{N}])", RegexOption.IGNORE_CASE)
+            regex.containsMatchIn(text)
+        }
     }
 
     private const val NUMBER = """\d+(?:[.,]\d+)*|[.,]\d+"""
