@@ -21,6 +21,9 @@ interface ExpenseDao {
     @Query("SELECT * FROM expenses WHERE id = :id")
     fun getExpenseByIdSync(id: Long): ExpenseEntity?
 
+    @Query("SELECT * FROM expenses")
+    fun getAllExpensesSync(): List<ExpenseEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     fun insertExpense(expense: ExpenseEntity): Long
 

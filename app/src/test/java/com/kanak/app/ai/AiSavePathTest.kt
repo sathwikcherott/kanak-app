@@ -212,6 +212,7 @@ class AiSavePathTest {
         override fun getAllExpenses(): Flow<List<ExpenseEntity>> = expenses
         override fun getExpenseById(id: Long): Flow<ExpenseEntity?> = flowOf(expenses.value.find { it.id == id })
         override fun getExpenseByIdSync(id: Long): ExpenseEntity? = expenses.value.find { it.id == id }
+        override fun getAllExpensesSync(): List<ExpenseEntity> = expenses.value
         override fun insertExpense(expense: ExpenseEntity): Long {
             val nextId = if (expense.id != 0L) expense.id else (expenses.value.maxOfOrNull { it.id } ?: 0L) + 1L
             val inserted = expense.copy(id = nextId)

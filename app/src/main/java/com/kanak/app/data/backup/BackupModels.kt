@@ -65,15 +65,28 @@ data class KanakBackup(
     val appVersion: String = "1.0",
     val preferences: BackupPreferences = BackupPreferences(),
     val expenses: List<BackupExpense> = emptyList(),
-    val customCategories: List<ExpenseCategory> = emptyList()
+    val customCategories: List<ExpenseCategory> = emptyList(),
+    val inboxTransactions: List<BackupInboxTransaction> = emptyList(),
+    val knowledge: List<BackupKnowledgeEntry> = emptyList()
 ) {
     companion object {
         const val FORMAT_IDENTIFIER = "kanak_backup"
-        const val CURRENT_BACKUP_VERSION = 2
+        const val CURRENT_BACKUP_VERSION = 3
         const val MAX_BACKUP_BYTES = 10 * 1024 * 1024L // 10 MiB; enforced before decoding file bytes
         const val MAX_EXPENSE_RECORDS = 50_000
     }
 }
+
+data class BackupInboxTransaction(
+    val id: Long, val notificationKey: String, val fingerprint: String, val amountMinor: Long,
+    val currency: String, val merchant: String, val occurredAt: Long, val suggestedCategory: String?,
+    val suggestionReason: String?, val status: String, val createdAt: Long
+)
+
+data class BackupKnowledgeEntry(
+    val id: Long, val alias: String, val normalizedAlias: String, val merchantLabel: String,
+    val category: String?, val createdAt: Long, val updatedAt: Long
+)
 
 data class BackupSummary(
     val version: Int,

@@ -15,6 +15,7 @@ import com.kanak.app.data.local.datastore.UserPreferencesRepository
 import com.kanak.app.data.repository.OfflineExpenseRepository
 import com.kanak.app.voice.AndroidVoiceInputRepository
 import com.kanak.app.voice.VoiceInputRepository
+import com.kanak.app.smartinbox.SmartInboxRepository
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,7 @@ class KanakApp : Application() {
             database = database
         )
     }
+    val smartInboxRepository by lazy { SmartInboxRepository(database) }
     private val backupDocumentStore by lazy { AndroidBackupDocumentStore(this) }
     val backupFileCatalog by lazy { BackupFileCatalog(backupDocumentStore) }
     internal val autoBackupController by lazy {
