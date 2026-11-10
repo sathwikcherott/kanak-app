@@ -33,6 +33,10 @@ import com.kanak.app.data.local.entity.CustomCategoryEntity
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.kanak.app.data.local.KanakDatabase
+import com.kanak.app.data.local.entity.InboxTransactionEntity
+import com.kanak.app.data.local.entity.MerchantKnowledgeEntity
+import com.kanak.app.data.backup.BackupInboxTransaction
+import com.kanak.app.data.backup.BackupKnowledgeEntry
 
 class OfflineExpenseRepository(
     private val expenseDao: ExpenseDao,
@@ -70,7 +74,13 @@ class OfflineExpenseRepository(
                     userPreferencesDataSource.themePreference.first()
                 ),
                 customCategories = getCategories().first().filter { it.isCustom },
-                expenses = getAllExpenses().first().map(BackupExpense::fromDomainModel)
+                expenses = getAllExpenses().first().map(BackupExpense::fromDomainModel),
+                inboxTransactions = database?.smartInboxDao()?.getAll()?.map { row ->
+                    BackupInboxTransaction(row.id, row.notificationKey, row.fingerprint, row.amountMinor, row.currency, row.merchant, row.occurredAt, row.suggestedCategory, row.suggestionReason, row.status, row.createdAt)
+                } ?: emptyList(),
+                knowledge = database?.merchantKnowledgeDao()?.getAll()?.map { row ->
+                    BackupKnowledgeEntry(row.id, row.alias, row.normalizedAlias, row.merchantLabel, row.category, row.createdAt, row.updatedAt)
+                } ?: emptyList()
             )
         }
     }
@@ -88,8 +98,12 @@ class OfflineExpenseRepository(
                     db.aiEnrichmentJobDao().deleteAllJobs()
                     db.expenseDao().deleteAllExpenses()
                     db.customCategoryDao().deleteAll()
+                    db.smartInboxDao().deleteAll()
+                    db.merchantKnowledgeDao().deleteAll()
                     db.customCategoryDao().insertAll(validated.customCategories.map(CustomCategoryEntity::from))
                     db.expenseDao().insertExpenses(entities)
+                    db.smartInboxDao().insertAll(validated.inboxTransactions.map { row -> InboxTransactionEntity(row.id, row.notificationKey, row.fingerprint, row.amountMinor, row.currency, row.merchant, row.occurredAt, row.suggestedCategory, row.suggestionReason, row.status, row.createdAt) })
+                    db.merchantKnowledgeDao().insertAll(validated.knowledge.map { row -> MerchantKnowledgeEntity(row.id, row.alias, row.normalizedAlias, row.merchantLabel, row.category, row.createdAt, row.updatedAt) })
                 }
                 restoreGeneration++
                 try {

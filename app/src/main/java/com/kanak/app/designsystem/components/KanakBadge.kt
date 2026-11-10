@@ -25,6 +25,7 @@ fun KanakSourceBadge(
     val (backgroundColor, textColor) = when (source) {
         EntrySource.TYPED -> MaterialTheme.colorScheme.surfaceVariant to MaterialTheme.colorScheme.onSurfaceVariant
         EntrySource.VOICE -> EmeraldSoftBg to EmeraldPrimary
+        EntrySource.NOTIFICATION -> MaterialTheme.colorScheme.primaryContainer to MaterialTheme.colorScheme.primary
     }
 
     Box(

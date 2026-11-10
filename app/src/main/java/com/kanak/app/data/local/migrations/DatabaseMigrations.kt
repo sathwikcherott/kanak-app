@@ -59,4 +59,14 @@ object DatabaseMigrations {
             }
         }
     }
+
+    val MIGRATION_5_6: Migration = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("CREATE TABLE IF NOT EXISTS `inbox_transactions` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `notification_key` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `amount_minor` INTEGER NOT NULL, `currency` TEXT NOT NULL, `merchant` TEXT NOT NULL, `occurred_at` INTEGER NOT NULL, `suggested_category` TEXT, `suggestion_reason` TEXT, `status` TEXT NOT NULL, `created_at` INTEGER NOT NULL)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_inbox_transactions_notification_key` ON `inbox_transactions` (`notification_key`)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_inbox_transactions_fingerprint` ON `inbox_transactions` (`fingerprint`)")
+            db.execSQL("CREATE TABLE IF NOT EXISTS `merchant_knowledge` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `alias` TEXT NOT NULL, `normalized_alias` TEXT NOT NULL, `merchant_label` TEXT NOT NULL, `category` TEXT, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)")
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_merchant_knowledge_normalized_alias` ON `merchant_knowledge` (`normalized_alias`)")
+        }
+    }
 }

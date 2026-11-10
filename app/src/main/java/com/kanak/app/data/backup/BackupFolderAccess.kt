@@ -7,6 +7,8 @@ import android.provider.DocumentsContract
 import com.kanak.app.data.local.datastore.UserPreferencesDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 interface BackupFolderAccess {
@@ -16,17 +18,20 @@ interface BackupFolderAccess {
 }
 
 class AndroidBackupFolderAccess(context: Context, private val preferences: UserPreferencesDataSource) : BackupFolderAccess {
+    internal val changeLock = Mutex()
     private val resolver = context.applicationContext.contentResolver
     override suspend fun currentFolder(): String? = preferences.backupFolderUri.first()
 
     override suspend fun chooseFolder(folder: String) = withContext(Dispatchers.IO) {
-        val uri = Uri.parse(folder)
-        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        val old = currentFolder()
-        resolver.takePersistableUriPermission(uri, flags)
-        preferences.setBackupFolderUri(folder)
-        if (old != null && old != folder) {
-            try { resolver.releasePersistableUriPermission(Uri.parse(old), flags) } catch (_: SecurityException) { }
+        changeLock.withLock {
+            val uri = Uri.parse(folder)
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            val old = currentFolder()
+            resolver.takePersistableUriPermission(uri, flags)
+            preferences.setBackupFolderUri(folder)
+            if (old != null && old != folder) {
+                try { resolver.releasePersistableUriPermission(Uri.parse(old), flags) } catch (_: SecurityException) { }
+            }
         }
     }
 
