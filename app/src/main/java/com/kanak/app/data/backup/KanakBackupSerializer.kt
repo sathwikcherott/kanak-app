@@ -4,6 +4,7 @@ import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
 import com.kanak.app.model.ExpenseCategory
+import com.kanak.app.model.ExpenseProfile
 
 object KanakBackupSerializer {
 
@@ -74,10 +75,38 @@ object KanakBackupSerializer {
             sb.append("      \"note\": ").append(if (exp.note != null) "\"${escapeJson(exp.note)}\"" else "null").append(",\n")
             sb.append("      \"category\": ").append(if (exp.category != null) "\"${exp.category.name}\"" else "null").append(",\n")
             sb.append("      \"source\": \"").append(exp.source.name).append("\",\n")
-            sb.append("      \"categorizationState\": \"").append(exp.categorizationState.name).append("\"\n")
+            sb.append("      \"categorizationState\": \"").append(exp.categorizationState.name).append("\"")
+            if (backup.version >= 4) sb.append(",\n      \"profile\": \"").append(exp.profile.name).append("\"")
+            sb.append("\n")
             sb.append("    }").append(if (index < backup.expenses.size - 1) ",\n" else "\n")
         }
-        sb.append("  ]\n")
+        sb.append("  ]")
+        if (backup.version >= 3) {
+            sb.append(",\n  \"inboxTransactions\": [\n")
+            backup.inboxTransactions.forEachIndexed { index, item ->
+                sb.append("    {\"id\": ").append(item.id)
+                    .append(", \"notificationKey\": \"").append(escapeJson(item.notificationKey))
+                    .append("\", \"fingerprint\": \"").append(escapeJson(item.fingerprint))
+                    .append("\", \"amountMinor\": ").append(item.amountMinor)
+                    .append(", \"currency\": \"").append(escapeJson(item.currency))
+                    .append("\", \"merchant\": \"").append(escapeJson(item.merchant))
+                    .append("\", \"occurredAt\": ").append(item.occurredAt)
+                    .append(", \"suggestedCategory\": ").append(item.suggestedCategory?.let { "\"${escapeJson(it)}\"" } ?: "null")
+                    .append(", \"suggestionReason\": ").append(item.suggestionReason?.let { "\"${escapeJson(it)}\"" } ?: "null")
+                    .append(", \"status\": \"").append(escapeJson(item.status)).append("\", \"createdAt\": ").append(item.createdAt).append("}")
+                    .append(if (index < backup.inboxTransactions.lastIndex) ",\n" else "\n")
+            }
+            sb.append("  ],\n  \"knowledge\": [\n")
+            backup.knowledge.forEachIndexed { index, item ->
+                sb.append("    {\"id\": ").append(item.id).append(", \"alias\": \"").append(escapeJson(item.alias))
+                    .append("\", \"normalizedAlias\": \"").append(escapeJson(item.normalizedAlias))
+                    .append("\", \"merchantLabel\": \"").append(escapeJson(item.merchantLabel))
+                    .append("\", \"category\": ").append(item.category?.let { "\"${escapeJson(it)}\"" } ?: "null")
+                    .append(", \"createdAt\": ").append(item.createdAt).append(", \"updatedAt\": ").append(item.updatedAt).append("}")
+                    .append(if (index < backup.knowledge.lastIndex) ",\n" else "\n")
+            }
+            sb.append("  ]\n")
+        } else sb.append("\n")
         sb.append("}")
         return sb.toString()
     }
@@ -242,6 +271,14 @@ object KanakBackupSerializer {
                 throw BackupException.UnknownEnum("Unknown categorization state: '$stateStr' for expense ID $idRaw")
             }
 
+            val profile = if (version >= 4) {
+                val profileStr = expMap["profile"] as? String
+                    ?: throw BackupException.MissingRequiredField("Missing profile for expense ID $idRaw")
+                if (profileStr == "GIRLFRIEND_EXPENSES") ExpenseProfile.OTHER_EXPENSES else try { ExpenseProfile.valueOf(profileStr) } catch (_: Exception) {
+                    throw BackupException.UnknownEnum("Unknown expense profile: '$profileStr' for expense ID $idRaw")
+                }
+            } else ExpenseProfile.MY_EXPENSES
+
             backupExpenses.add(
                 BackupExpense(
                     id = idRaw,
@@ -251,11 +288,14 @@ object KanakBackupSerializer {
                     note = note,
                     category = category,
                     source = source,
-                    categorizationState = categorizationState
+                    categorizationState = categorizationState,
+                    profile = profile
                 )
             )
         }
 
+        val inbox = if (version >= 3) parseInbox(rootMap["inboxTransactions"]) else emptyList()
+        val knowledge = if (version >= 3) parseKnowledge(rootMap["knowledge"]) else emptyList()
         return KanakBackup(
             format = format,
             version = version,
@@ -263,7 +303,9 @@ object KanakBackupSerializer {
             appVersion = appVersion,
             preferences = preferences,
             expenses = java.util.Collections.unmodifiableList(backupExpenses),
-            customCategories = java.util.Collections.unmodifiableList(customCategoriesById.values.filter { it.isCustom })
+            customCategories = java.util.Collections.unmodifiableList(customCategoriesById.values.filter { it.isCustom }),
+            inboxTransactions = java.util.Collections.unmodifiableList(inbox),
+            knowledge = java.util.Collections.unmodifiableList(knowledge)
         )
     }
 
@@ -285,6 +327,35 @@ object KanakBackupSerializer {
         if (value == null) return null
         return value as? String
             ?: throw BackupException.CorruptedJson("Invalid type for nullable field '$key'")
+    }
+
+    private fun parseInbox(value: Any?): List<BackupInboxTransaction> {
+        val rows = value as? List<*> ?: throw BackupException.MissingRequiredField("Missing inboxTransactions in version 3 backup")
+        if (rows.size > KanakBackup.MAX_EXPENSE_RECORDS) throw BackupException.LimitExceeded("Too many inbox transactions")
+        val ids = HashSet<Long>(); val keys = HashSet<String>(); val fingerprints = HashSet<String>()
+        return rows.map { row ->
+            val fields = row as? Map<*, *> ?: throw BackupException.InvalidFormat("Invalid inbox transaction")
+            fun text(key: String) = fields[key] as? String ?: throw BackupException.MissingRequiredField("Missing inbox $key")
+            fun number(key: String) = fields[key] as? Long ?: throw BackupException.MissingRequiredField("Missing inbox $key")
+            val id = number("id"); val amount = number("amountMinor"); val occurredAt = number("occurredAt"); val createdAt = number("createdAt")
+            val key = text("notificationKey"); val fingerprint = text("fingerprint"); val status = text("status")
+            if (id <= 0 || amount <= 0 || occurredAt <= 0 || createdAt <= 0 || !ids.add(id) || !keys.add(key) || !fingerprints.add(fingerprint)) throw BackupException.InvalidFormat("Invalid or duplicate inbox transaction")
+            if (status !in setOf("PENDING", "APPROVED", "DISMISSED")) throw BackupException.UnknownEnum("Unknown inbox status")
+            BackupInboxTransaction(id, key, fingerprint, amount, text("currency"), text("merchant"), occurredAt, nullableString(fields, "suggestedCategory"), nullableString(fields, "suggestionReason"), status, createdAt)
+        }
+    }
+
+    private fun parseKnowledge(value: Any?): List<BackupKnowledgeEntry> {
+        val rows = value as? List<*> ?: throw BackupException.MissingRequiredField("Missing knowledge in version 3 backup")
+        val aliases = HashSet<String>()
+        return rows.map { row ->
+            val fields = row as? Map<*, *> ?: throw BackupException.InvalidFormat("Invalid knowledge entry")
+            fun text(key: String) = fields[key] as? String ?: throw BackupException.MissingRequiredField("Missing knowledge $key")
+            fun number(key: String) = fields[key] as? Long ?: throw BackupException.MissingRequiredField("Missing knowledge $key")
+            val id = number("id"); val normalized = text("normalizedAlias")
+            if (id <= 0 || normalized.isBlank() || !aliases.add(normalized)) throw BackupException.InvalidFormat("Invalid or duplicate knowledge entry")
+            BackupKnowledgeEntry(id, text("alias"), normalized, text("merchantLabel"), nullableString(fields, "category"), number("createdAt"), number("updatedAt"))
+        }
     }
 
     private fun escapeJson(str: String): String = buildString {

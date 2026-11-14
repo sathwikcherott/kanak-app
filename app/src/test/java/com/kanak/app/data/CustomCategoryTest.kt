@@ -34,7 +34,7 @@ class CustomCategoryTest {
         val backup = KanakBackup(exportedAt = 1000, customCategories = listOf(custom),
             expenses = listOf(BackupExpense(1, Long.MAX_VALUE, "INR", 1000, category = custom)))
         val restored = KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup))
-        assertEquals(2, restored.version)
+        assertEquals(KanakBackup.CURRENT_BACKUP_VERSION, restored.version)
         assertEquals(custom.name, restored.expenses.single().category!!.name)
         assertEquals(custom.displayName, restored.expenses.single().category!!.displayName)
         assertEquals(Long.MAX_VALUE, restored.expenses.single().amountMinor)
@@ -95,7 +95,7 @@ class CustomCategoryTest {
     }
     @Test fun versionOneCannotHideAProvidedCustomCatalog() {
         val json = KanakBackupSerializer.toJson(KanakBackup(customCategories = listOf(category())))
-            .replace("\"version\": 2", "\"version\": 1")
+            .replace("\"version\": ${KanakBackup.CURRENT_BACKUP_VERSION}", "\"version\": 1")
         try { KanakBackupSerializer.fromJson(json); fail("Expected version guard") } catch (_: BackupException.InvalidFormat) { }
     }
     @Test fun duplicateCustomIdsAndNormalizedNamesAreRejected() {

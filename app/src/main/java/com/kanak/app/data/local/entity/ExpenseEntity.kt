@@ -7,6 +7,7 @@ import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
 import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
+import com.kanak.app.model.ExpenseProfile
 
 @Entity(tableName = "expenses")
 data class ExpenseEntity(
@@ -25,7 +26,9 @@ data class ExpenseEntity(
     @ColumnInfo(name = "source")
     val source: String,
     @ColumnInfo(name = "categorization_state")
-    val categorizationState: String
+    val categorizationState: String,
+    @ColumnInfo(name = "profile")
+    val profile: String = ExpenseProfile.MY_EXPENSES.name
 )
 
 fun ExpenseEntity.toDomainModel(categories: Map<String, ExpenseCategory> = emptyMap()): Expense {
@@ -39,7 +42,8 @@ fun ExpenseEntity.toDomainModel(categories: Map<String, ExpenseCategory> = empty
             categories[name] ?: try { ExpenseCategory.valueOf(name) } catch (_: Exception) { null }
         },
         source = try { EntrySource.valueOf(source) } catch (_: Exception) { EntrySource.TYPED },
-        categorizationState = try { CategorizationState.valueOf(categorizationState) } catch (_: Exception) { CategorizationState.UNCATEGORIZED }
+        categorizationState = try { CategorizationState.valueOf(categorizationState) } catch (_: Exception) { CategorizationState.UNCATEGORIZED },
+        profile = try { ExpenseProfile.valueOf(profile) } catch (_: Exception) { ExpenseProfile.MY_EXPENSES }
     )
 }
 
@@ -52,6 +56,7 @@ fun Expense.toEntity(): ExpenseEntity {
         note = note,
         category = category?.name,
         source = source.name,
-        categorizationState = categorizationState.name
+        categorizationState = categorizationState.name,
+        profile = profile.name
     )
 }

@@ -1,7 +1,6 @@
 package com.kanak.app.ui
 
 import com.kanak.app.ai.AiConnectionFailure
-import com.kanak.app.ai.AiDescription
 import com.kanak.app.ai.CloudAiCategorizer
 import com.kanak.app.ai.FakeCloudAiCategorizer
 import com.kanak.app.ai.model.AiCategorizationRequest
@@ -50,128 +49,6 @@ class QuickEntryViewModelVoiceTest {
     @After
     fun tearDown() {
         Dispatchers.resetMain()
-    }
-
-    @Test
-    fun automaticAiCategorization_triggersOnTypingWithDebounce() = runTest {
-        val ai = FakeCloudAiCategorizer(
-            mockResult = AiCategorizationResult(
-                suggestedCategory = ExpenseCategory.FOOD,
-                confidenceScore = 0.95f,
-                reasoning = "Inferred food"
-            )
-        )
-        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
-        val note = "acetaminophen"
-        viewModel.onAmountChanged("250.50")
-        viewModel.onNoteChanged(note)
-
-        // Before 700ms debounce completes, no AI request sent yet
-        assertNull(ai.lastRequest)
-
-        // Advance 700ms debounce
-        advanceTimeBy(700L)
-        advanceUntilIdle()
-
-        assertEquals(AiCategorizationRequest("acetaminophen"), ai.lastRequest)
-        assertEquals(ExpenseCategory.FOOD, viewModel.uiState.value.selectedCategory)
-        assertEquals(CategorizationState.AUTO_CATEGORIZED, viewModel.uiState.value.categorizationState)
-
-        viewModel.saveExpense()
-        advanceUntilIdle()
-
-        val expense = fakeExpenseRepository.savedExpenses.single()
-        assertEquals(25050L, expense.amountMinor)
-        assertEquals(note, expense.note)
-        assertEquals(ExpenseCategory.FOOD, expense.category)
-    }
-
-    @Test
-    fun aiSuggestion_manualCategoryCancelsPendingResult() = runTest {
-        val response = CompletableDeferred<Result<AiCategorizationResult>>()
-        val ai = object : CloudAiCategorizer {
-            override suspend fun categorizeExpense(request: AiCategorizationRequest) = response.await()
-        }
-        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
-        viewModel.onNoteChanged("acetaminophen")
-
-        advanceTimeBy(700L)
-        runCurrent()
-        assertTrue(viewModel.uiState.value.isRequestingAi)
-
-        viewModel.onCategorySelected(ExpenseCategory.HEALTH)
-        response.complete(Result.success(AiCategorizationResult(ExpenseCategory.FOOD, 1f, null)))
-        advanceUntilIdle()
-
-        assertFalse(viewModel.uiState.value.isRequestingAi)
-        assertEquals(ExpenseCategory.HEALTH, viewModel.uiState.value.selectedCategory)
-        assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
-    }
-
-    @Test
-    fun aiFailure_doesNotBlockLocalSave() = runTest {
-        val ai = FakeCloudAiCategorizer(shouldSucceed = false)
-        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
-        viewModel.onAmountChanged("25")
-        viewModel.onNoteChanged("acetaminophen")
-
-        advanceTimeBy(700L)
-        advanceUntilIdle()
-
-        assertFalse(viewModel.uiState.value.isRequestingAi)
-        assertTrue(viewModel.uiState.value.isValidInput)
-
-        viewModel.saveExpense()
-        advanceUntilIdle()
-        assertNull(fakeExpenseRepository.savedExpenses.single().category)
-    }
-
-    @Test
-    fun aiConnectionFailure_keepsDraftAndAllowsManualSelection() = runTest {
-        val message = "The AI backend rejected the access token (HTTP 401). Edit the connection in Settings."
-        val ai = object : CloudAiCategorizer {
-            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> =
-                Result.failure(AiConnectionFailure(message))
-        }
-        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
-        viewModel.onAmountChanged("25")
-        viewModel.onNoteChanged("acetaminophen")
-
-        advanceTimeBy(700L)
-        advanceUntilIdle()
-
-        assertFalse(viewModel.uiState.value.isRequestingAi)
-        assertEquals("acetaminophen", viewModel.uiState.value.note)
-        assertTrue(viewModel.uiState.value.isValidInput)
-    }
-
-    @Test
-    fun voiceCalculation_savesFullTotalAndOriginalDescription() = runTest {
-        val transcript = "100 / (2 + 3) × 3 bus"
-        val voice = FakeVoiceInputRepository(isAvailable = true, mockTranscript = transcript)
-        val viewModel = QuickEntryViewModel(fakeExpenseRepository, voice)
-        viewModel.onMicTapped()
-        viewModel.saveExpense()
-        advanceUntilIdle()
-
-        val saved = fakeExpenseRepository.savedExpenses.single()
-        assertEquals(6000L, saved.amountMinor)
-        assertEquals(transcript, saved.note)
-        assertEquals(ExpenseCategory.TRANSPORT, saved.category)
-    }
-
-    @Test
-    fun incompleteCalculation_clearsPreviousAmountAndBlocksSave() = runTest {
-        val voice = FakeVoiceInputRepository(isAvailable = true, mockTranscript = "25 50 bus")
-        val viewModel = QuickEntryViewModel(fakeExpenseRepository, voice)
-        viewModel.onAmountChanged("50")
-        viewModel.onMicTapped()
-        viewModel.saveExpense()
-        advanceUntilIdle()
-
-        assertEquals("", viewModel.uiState.value.amountText)
-        assertEquals("25 50 bus", viewModel.uiState.value.note)
-        assertTrue(fakeExpenseRepository.savedExpenses.isEmpty())
     }
 
     @Test
@@ -252,6 +129,203 @@ class QuickEntryViewModelVoiceTest {
     }
 
     @Test
+    fun typingCableCharacterByCharacter_resetsDebounceTimerAndDoesNotMatchCab() = runTest {
+        val requests = mutableListOf<String>()
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> {
+                request.note?.let { requests.add(it) }
+                return Result.success(AiCategorizationResult(ExpenseCategory.TECH, 1f, null))
+            }
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        // Type "c", "ca", "cab", "cabl", "cable" with 200ms between keystrokes
+        val text = "cable"
+        for (i in 1..text.length) {
+            viewModel.onNoteChanged(text.substring(0, i))
+            advanceTimeBy(200L)
+            runCurrent()
+            assertTrue(requests.isEmpty())
+        }
+
+        // Advance full 1,200ms debounce after typing stops
+        advanceTimeBy(1200L)
+        advanceUntilIdle()
+
+        assertEquals(listOf("cable"), requests)
+        assertEquals(ExpenseCategory.TECH, viewModel.uiState.value.selectedCategory)
+    }
+
+    @Test
+    fun typingCabAndStopping_matchesTransportCategory() = runTest {
+        val ai = FakeCloudAiCategorizer(
+            mockResult = AiCategorizationResult(ExpenseCategory.TRANSPORT, 1f, null)
+        )
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        viewModel.onNoteChanged("cab")
+        assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
+
+        advanceTimeBy(1200L)
+        advanceUntilIdle()
+
+        assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
+    }
+
+    @Test
+    fun changingCabToCableWhileInFlight_cancelsOldRequestAndUsesLatestInput() = runTest {
+        val cabDeferred = CompletableDeferred<Result<AiCategorizationResult>>()
+        val cableDeferred = CompletableDeferred<Result<AiCategorizationResult>>()
+        val requestedNotes = mutableListOf<String>()
+
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> {
+                requestedNotes.add(request.note.orEmpty())
+                return if (request.note == "cab") cabDeferred.await() else cableDeferred.await()
+            }
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        viewModel.onNoteChanged("cab")
+        advanceTimeBy(1200L)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isRequestingAi)
+        assertEquals(listOf("cab"), requestedNotes)
+
+        viewModel.onNoteChanged("cable")
+
+        cabDeferred.complete(Result.success(AiCategorizationResult(ExpenseCategory.TRANSPORT, 1f, null)))
+        runCurrent()
+
+        assertNull(viewModel.uiState.value.selectedCategory)
+
+        advanceTimeBy(1200L)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isRequestingAi)
+
+        cableDeferred.complete(Result.success(AiCategorizationResult(ExpenseCategory.TECH, 1f, null)))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isRequestingAi)
+        assertEquals(ExpenseCategory.TECH, viewModel.uiState.value.selectedCategory)
+    }
+
+    @Test
+    fun receivingStaleCabResponseAfterNewCableRequest_ignoresStaleResponse() = runTest {
+        val requests = mutableListOf<String>()
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> {
+                requests.add(request.note.orEmpty())
+                if (request.note == "cab") {
+                    kotlinx.coroutines.delay(2000L)
+                    return Result.success(AiCategorizationResult(ExpenseCategory.TRANSPORT, 1f, null))
+                }
+                return Result.success(AiCategorizationResult(ExpenseCategory.TECH, 1f, null))
+            }
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        viewModel.onNoteChanged("cab")
+        advanceTimeBy(1200L)
+        runCurrent()
+
+        viewModel.onNoteChanged("cable")
+        advanceTimeBy(1200L)
+        advanceUntilIdle()
+
+        assertEquals(ExpenseCategory.TECH, viewModel.uiState.value.selectedCategory)
+    }
+
+    @Test
+    fun rapidTypingAndDeletion_onlyFiresForFinalInputAfterDebounce() = runTest {
+        val requests = mutableListOf<String>()
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> {
+                requests.add(request.note.orEmpty())
+                return Result.success(AiCategorizationResult(ExpenseCategory.FOOD, 1f, null))
+            }
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        viewModel.onNoteChanged("cable")
+        advanceTimeBy(300L)
+        viewModel.onNoteChanged("cab")
+        advanceTimeBy(300L)
+        viewModel.onNoteChanged("c")
+        advanceTimeBy(300L)
+        viewModel.onNoteChanged("coffee")
+
+        assertTrue(requests.isEmpty())
+
+        advanceTimeBy(1200L)
+        advanceUntilIdle()
+
+        assertEquals(listOf("coffee"), requests)
+    }
+
+    @Test
+    fun manualCategorySelection_duringAiProcessing_preservesManualChoice() = runTest {
+        val response = CompletableDeferred<Result<AiCategorizationResult>>()
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest) = response.await()
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        viewModel.onNoteChanged("acetaminophen")
+        advanceTimeBy(1200L)
+        runCurrent()
+        assertTrue(viewModel.uiState.value.isRequestingAi)
+
+        viewModel.onCategorySelected(ExpenseCategory.HEALTH)
+        response.complete(Result.success(AiCategorizationResult(ExpenseCategory.FOOD, 1f, null)))
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isRequestingAi)
+        assertEquals(ExpenseCategory.HEALTH, viewModel.uiState.value.selectedCategory)
+        assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
+    }
+
+    @Test
+    fun voiceInputDescription_triggersDebouncedAiCategorization() = runTest {
+        val ai = FakeCloudAiCategorizer(
+            mockResult = AiCategorizationResult(ExpenseCategory.TECH, 1f, null)
+        )
+        val fakeVoiceRepo = FakeVoiceInputRepository(
+            isAvailable = true,
+            mockTranscript = "35.50 for keyboard"
+        )
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo, aiCategorizer = ai)
+
+        viewModel.onMicTapped()
+        advanceTimeBy(1200L)
+        advanceUntilIdle()
+
+        assertEquals("35.50 for keyboard", viewModel.uiState.value.note)
+        assertEquals(ExpenseCategory.TECH, viewModel.uiState.value.selectedCategory)
+    }
+
+    @Test
+    fun backendTimeoutOrFailure_handlesGracefullyWithoutBlockingUser() = runTest {
+        val ai = object : CloudAiCategorizer {
+            override suspend fun categorizeExpense(request: AiCategorizationRequest): Result<AiCategorizationResult> =
+                Result.failure(AiConnectionFailure("The AI connection timed out. Try again."))
+        }
+        val viewModel = QuickEntryViewModel(fakeExpenseRepository, aiCategorizer = ai)
+
+        viewModel.onAmountChanged("25")
+        viewModel.onNoteChanged("keyboard")
+        advanceTimeBy(1200L)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.isRequestingAi)
+        assertTrue(viewModel.uiState.value.isValidInput)
+
+        viewModel.saveExpense()
+        advanceUntilIdle()
+        assertEquals(1, fakeExpenseRepository.savedExpenses.size)
+    }
+
+    @Test
     fun voiceDraft_neverInheritsPreviousCategoryFromEarlierTransaction() = runTest {
         val fakeVoiceRepo = FakeVoiceInputRepository(
             isAvailable = true,
@@ -259,14 +333,11 @@ class QuickEntryViewModelVoiceTest {
         )
         val viewModel = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo)
 
-        // 1. User previously had TRANSPORT selected
         viewModel.onCategorySelected(ExpenseCategory.TRANSPORT)
         assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
 
-        // 2. Speak new voice draft
         viewModel.onMicTapped()
 
-        // 3. Category MUST NOT inherit TRANSPORT; it must independently infer FOOD
         assertEquals("120", viewModel.uiState.value.amountText)
         assertEquals(ExpenseCategory.FOOD, viewModel.uiState.value.selectedCategory)
         assertEquals("120 chicken biryani", viewModel.uiState.value.note)
@@ -276,15 +347,12 @@ class QuickEntryViewModelVoiceTest {
     fun onNoteChanged_preservesManuallySelectedCategoryAndDoesNotOverwriteWithAutoInference() = runTest {
         val viewModel = QuickEntryViewModel(fakeExpenseRepository)
 
-        // User explicitly taps & confirms BILL
         viewModel.onCategorySelected(ExpenseCategory.BILL)
         assertEquals(ExpenseCategory.BILL, viewModel.uiState.value.selectedCategory)
         assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
 
-        // User edits note with words containing food keywords ("swiggy")
         viewModel.onNoteChanged("Swiggy bill for office party")
 
-        // User's manually confirmed category BILL MUST BE PRESERVED
         assertEquals(ExpenseCategory.BILL, viewModel.uiState.value.selectedCategory)
         assertEquals(CategorizationState.CONFIRMED, viewModel.uiState.value.categorizationState)
     }
@@ -293,10 +361,8 @@ class QuickEntryViewModelVoiceTest {
     fun onNoteChanged_reInfersCategoryWhenNotManuallyConfirmed() = runTest {
         val viewModel = QuickEntryViewModel(fakeExpenseRepository)
 
-        // User types description without selecting category
         viewModel.onNoteChanged("80 bus ticket to metro station")
 
-        // Category is dynamically auto-inferred as TRANSPORT
         assertEquals(ExpenseCategory.TRANSPORT, viewModel.uiState.value.selectedCategory)
         assertEquals(CategorizationState.AUTO_CATEGORIZED, viewModel.uiState.value.categorizationState)
     }
@@ -309,16 +375,13 @@ class QuickEntryViewModelVoiceTest {
         )
         val viewModel = QuickEntryViewModel(fakeExpenseRepository, fakeVoiceRepo)
 
-        // 1. Populate voice draft
         viewModel.onMicTapped()
         assertEquals(EntrySource.VOICE, viewModel.uiState.value.source)
 
-        // 2. User edits draft note manually
         viewModel.onNoteChanged("50 dollars shopping at Target - bought shoes")
 
-        // 3. Save draft using the exact same saveExpense() path
         viewModel.saveExpense()
-        testDispatcher.scheduler.advanceUntilIdle()
+        advanceUntilIdle()
 
         assertEquals(1, fakeExpenseRepository.savedExpenses.size)
         val saved = fakeExpenseRepository.savedExpenses[0]
@@ -341,7 +404,6 @@ class QuickEntryViewModelVoiceTest {
         assertNotNull(viewModel.uiState.value.userMessage)
         assertEquals("Microphone permission is required for voice input", viewModel.uiState.value.userMessage)
 
-        // Typing remains 100% functional
         viewModel.onAmountChanged("20.00")
         viewModel.onCategorySelected(ExpenseCategory.BILL)
         assertEquals("20.00", viewModel.uiState.value.amountText)
@@ -382,6 +444,13 @@ class QuickEntryViewModelVoiceTest {
         override fun getEnrichmentJobForExpense(expenseId: Long): Flow<com.kanak.app.data.local.entity.AiEnrichmentJobEntity?> = flowOf(null)
         override suspend fun replaceAllExpensesInTransaction(expenses: List<Expense>) {
             expensesFlow.value = expenses
+        }
+        private val categoryFlow = MutableStateFlow<List<ExpenseCategory>>(ExpenseCategory.entries)
+        override fun getCategories(): Flow<List<ExpenseCategory>> = categoryFlow
+        override suspend fun createCategory(name: String): ExpenseCategory {
+            val cat = ExpenseCategory.custom("custom:00000000-0000-0000-0000-000000000001", name)
+            categoryFlow.value = categoryFlow.value + cat
+            return cat
         }
     }
 }

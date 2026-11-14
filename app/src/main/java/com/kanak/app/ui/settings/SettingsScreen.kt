@@ -51,8 +51,10 @@ import androidx.compose.ui.unit.dp
 import com.kanak.app.ai.AiConnectionStore
 import com.kanak.app.data.backup.BackupSummary
 import com.kanak.app.data.local.datastore.ThemePreference
+import com.kanak.app.model.ExpenseProfile
 import com.kanak.app.designsystem.components.KanakCard
 import com.kanak.app.designsystem.components.KanakPrimaryButton
+import com.kanak.app.designsystem.components.KanakSecondaryButton
 import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import java.text.SimpleDateFormat
@@ -88,6 +90,9 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onManageBackupFiles: () -> Unit = {},
     aiConnection: AiConnectionStore? = null,
+    autoBackupContent: @Composable () -> Unit = {},
+    onOpenSmartInbox: () -> Unit = {},
+    onSelectExpenseProfile: (ExpenseProfile) -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -166,6 +171,10 @@ fun SettingsScreen(
                 }
 
                 item {
+                    ExpenseProfilesSection(uiState.activeExpenseProfile, onSelectExpenseProfile)
+                }
+
+                item {
                     BackupAndRestoreSection(
                         lastBackupTime = uiState.lastBackupExportedTime,
                         isExporting = uiState.isExportingBackup,
@@ -180,6 +189,10 @@ fun SettingsScreen(
                         }
                     )
                 }
+
+                item { autoBackupContent() }
+
+                item { SmartInboxSettingsSection(onOpenSmartInbox) }
 
                 item {
                     if (aiConnection != null) AiCategorizationSection(aiConnection)
@@ -224,6 +237,54 @@ fun SettingsScreen(
                     errorMessage = uiState.backupError,
                     onDismiss = onClearBackupError
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpenseProfilesSection(
+    activeProfile: ExpenseProfile,
+    onSelect: (ExpenseProfile) -> Unit
+) {
+    val isMyExpenses = activeProfile == ExpenseProfile.MY_EXPENSES
+    Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+        Text("EXPENSE PROFILES", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        KanakCard(modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+                Text(activeProfile.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (isMyExpenses) "Your default profile. Kanak always opens here."
+                    else "Keep occasional expenses separate from My Expenses.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text("✓ Currently active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                if (isMyExpenses) {
+                    KanakSecondaryButton(
+                        onClick = { onSelect(ExpenseProfile.OTHER_EXPENSES) },
+                        modifier = Modifier.fillMaxWidth(),
+                        text = "Switch to Other Expenses"
+                    )
+                } else {
+                    KanakPrimaryButton(
+                        onClick = { onSelect(ExpenseProfile.MY_EXPENSES) },
+                        text = "Return to My Expenses"
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SmartInboxSettingsSection(onOpen: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+        Text("SMART INBOX", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        KanakCard(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Smart Inbox & Teach Kanak", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Review Paytm debits before adding them, and manage local merchant rules.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

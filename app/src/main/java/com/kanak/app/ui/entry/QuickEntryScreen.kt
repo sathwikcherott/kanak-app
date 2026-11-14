@@ -332,6 +332,15 @@ fun QuickEntryScreen(
                             )
                         }
                     }
+
+                    uiState.aiMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = KanakSpacing.extraSmall)
+                        )
+                    }
                 }
             }
 

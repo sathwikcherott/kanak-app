@@ -17,9 +17,12 @@ data class BackupFile(val document: BackupDocument, val exportedAt: Long, val by
 data class BackupFileListing(val files: List<BackupFile>, val skipped: Int)
 data class BackupDeletionResult(val deleted: Int, val failed: Int, val protected: Int)
 
-class BackupFileCatalog(private val store: BackupDocumentStore) {
+class BackupFileCatalog(
+    private val store: BackupDocumentStore,
+    private val acceptsName: (String) -> Boolean = BackupFileNames::isCandidate,
+) {
     suspend fun scan(folder: String): BackupFileListing {
-        val candidates = store.children(folder).filter { BackupFileNames.isCandidate(it.name) }
+        val candidates = store.children(folder).filter { acceptsName(it.name) }
         require(candidates.size <= MAX_BACKUPS) { "This folder has more than $MAX_BACKUPS backup files. Choose a smaller backup folder." }
         val files = mutableListOf<BackupFile>()
         var skipped = 0
@@ -41,9 +44,9 @@ class BackupFileCatalog(private val store: BackupDocumentStore) {
     }
 
     /** Recheck membership, content and retention at execution time, not just when the dialog was opened. */
-    suspend fun deleteSelected(folder: String, selected: List<BackupFile>): BackupDeletionResult {
+    suspend fun deleteSelected(folder: String, selected: List<BackupFile>, keep: Int = 1): BackupDeletionResult {
         val current = scan(folder).files
-        val newest = current.firstOrNull()?.document?.id
+        val protectedIds = current.take(keep.coerceAtLeast(1)).map { it.document.id }.toSet()
         val byId = current.associateBy { it.document.id }
         var deleted = 0
         var failed = 0
@@ -52,8 +55,8 @@ class BackupFileCatalog(private val store: BackupDocumentStore) {
             currentCoroutineContext().ensureActive()
             val id = file.document.id
             val latest = byId[id]
-            if (id == newest) {
-                protected++ // Always retain the newest verified backup in this folder.
+            if (id in protectedIds) {
+                protected++ // Retain the required newest verified backups.
                 continue
             }
             if (latest == null || !latest.document.canDelete || latest.fingerprint != file.fingerprint || latest.document.name != file.document.name) {

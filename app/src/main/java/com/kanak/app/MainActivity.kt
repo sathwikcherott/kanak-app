@@ -2,6 +2,7 @@ package com.kanak.app
 
 import android.app.Activity
 import android.graphics.Color
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
@@ -37,48 +38,58 @@ import com.kanak.app.ui.navigation.KanakTab
 import com.kanak.app.ui.settings.SettingsScreen
 import com.kanak.app.ui.settings.SettingsViewModel
 import com.kanak.app.ui.transactions.TransactionsViewModel
+import com.kanak.app.ui.smartinbox.SmartInboxViewModel
+import com.kanak.app.ui.smartinbox.SmartInboxScreen
 import androidx.compose.runtime.saveable.rememberSaveable
+import com.kanak.app.ui.settings.AutoBackupSection
 import com.kanak.app.ui.settings.BackupFilesRoute
 import com.kanak.app.ui.settings.BackupFilesViewModel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
+    private val sharedText = MutableStateFlow<String?>(null)
 
     private val homeViewModel: HomeViewModel by viewModels {
-        HomeViewModel.Factory((application as KanakApp).expenseRepository)
+        HomeViewModel.Factory((application as KanakApp).profiledExpenseRepository)
     }
 
     private val quickEntryViewModel: QuickEntryViewModel by viewModels {
         val app = application as KanakApp
         QuickEntryViewModel.Factory(
-            repository = app.expenseRepository,
+            repository = app.profiledExpenseRepository,
             voiceInputRepository = app.voiceInputRepository,
             aiCategorizer = app.cloudAiCategorizer
         )
     }
 
     private val transactionsViewModel: TransactionsViewModel by viewModels {
-        TransactionsViewModel.Factory((application as KanakApp).expenseRepository)
+        TransactionsViewModel.Factory((application as KanakApp).profiledExpenseRepository)
     }
 
     private val analyticsViewModel: AnalyticsViewModel by viewModels {
-        AnalyticsViewModel.Factory((application as KanakApp).expenseRepository)
+        AnalyticsViewModel.Factory((application as KanakApp).profiledExpenseRepository)
     }
 
     private val settingsViewModel: SettingsViewModel by viewModels {
         val app = application as KanakApp
-        SettingsViewModel.Factory(app.expenseRepository, app.backupRepository)
+        SettingsViewModel.Factory(app.profiledExpenseRepository, app.backupRepository, app.expenseProfiles)
     }
 
     private val backupFilesViewModel: BackupFilesViewModel by viewModels {
         val app = application as KanakApp
         BackupFilesViewModel.Factory(app.backupFileCatalog, app.backupFolderAccess)
     }
+    private val smartInboxViewModel: SmartInboxViewModel by viewModels {
+        val app = application as KanakApp
+        SmartInboxViewModel.Factory(app.smartInboxRepository, app.expenseRepository)
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        acceptSharedText(intent)
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT)
@@ -88,6 +99,7 @@ class MainActivity : ComponentActivity() {
             val aiConnection = (application as KanakApp).aiConnectionStore
             val aiEndpoint by aiConnection.endpoint.collectAsState()
             var showBackupFiles by rememberSaveable { mutableStateOf(false) }
+            var showSmartInbox by rememberSaveable { mutableStateOf(false) }
             var showExitDialog by remember { mutableStateOf(value = false) }
 
             // Sheet visibility is navigation state, not dashboard content. Keep the
@@ -109,6 +121,16 @@ class MainActivity : ComponentActivity() {
             val transactionsUiState by transactionsViewModel.uiState.collectAsState()
             val analyticsUiState by analyticsViewModel.uiState.collectAsState()
             val settingsUiState by settingsViewModel.uiState.collectAsState()
+            val smartInboxUiState by smartInboxViewModel.uiState.collectAsState()
+            val pendingSharedText by sharedText.collectAsState()
+
+            androidx.compose.runtime.LaunchedEffect(pendingSharedText) {
+                pendingSharedText?.let { text ->
+                    showSmartInbox = true
+                    smartInboxViewModel.importSharedText(text)
+                    sharedText.value = null
+                }
+            }
 
             val isSystemDark = isSystemInDarkTheme()
             val darkTheme = when (settingsUiState.themePreference) {
@@ -120,6 +142,8 @@ class MainActivity : ComponentActivity() {
             BackHandler(enabled = !showQuickEntry) {
                 if (showExitDialog) {
                     showExitDialog = false
+                } else if (showSmartInbox) {
+                    showSmartInbox = false
                 } else if (homeUiState.activeTab != KanakTab.HOME) {
                     homeViewModel.selectTab(KanakTab.HOME)
                 } else {
@@ -130,10 +154,12 @@ class MainActivity : ComponentActivity() {
             KanakAppTheme(darkTheme = darkTheme) {
                 Scaffold(
                     bottomBar = {
-                        KanakBottomNavigation(
-                            activeTab = homeUiState.activeTab,
-                            onTabSelected = homeViewModel::selectTab
-                        )
+                        if (!showSmartInbox) {
+                            KanakBottomNavigation(
+                                activeTab = homeUiState.activeTab,
+                                onTabSelected = homeViewModel::selectTab
+                            )
+                        }
                     },
                     modifier = Modifier.fillMaxSize()
                 ) { innerPadding ->
@@ -185,11 +211,16 @@ class MainActivity : ComponentActivity() {
                                 onExportBackup = settingsViewModel::exportBackup,
                                 onManageBackupFiles = { showBackupFiles = true },
                                 aiConnection = aiConnection,
+                                autoBackupContent = {
+                                    AutoBackupSection((application as KanakApp).autoBackupController)
+                                },
                                 onRestoreFileSelected = settingsViewModel::onRestoreFileSelected,
                                 onConfirmRestore = settingsViewModel::confirmRestore,
                                 onCancelRestore = settingsViewModel::cancelRestore,
                                 onClearBackupError = settingsViewModel::clearBackupError,
                                 onClearUserMessage = settingsViewModel::clearUserMessage,
+                                onOpenSmartInbox = { showSmartInbox = true },
+                                onSelectExpenseProfile = settingsViewModel::selectExpenseProfile,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
@@ -204,6 +235,18 @@ class MainActivity : ComponentActivity() {
                     if (showBackupFiles) {
                         BackupFilesRoute(backupFilesViewModel) { showBackupFiles = false }
                     }
+                    if (showSmartInbox) {
+                        SmartInboxScreen(
+                            state = smartInboxUiState,
+                            onBack = { showSmartInbox = false },
+                            onApprove = smartInboxViewModel::approve,
+                            onDismiss = smartInboxViewModel::dismiss,
+                            onTeach = smartInboxViewModel::teach,
+                            onRemoveKnowledge = smartInboxViewModel::removeKnowledge,
+                            onClearMessage = smartInboxViewModel::clearMessage,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
 
                     if (showExitDialog) {
                         ExitConfirmationDialog(
@@ -217,5 +260,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        acceptSharedText(intent)
+    }
+
+    private fun acceptSharedText(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
+        if (text.isNotEmpty()) sharedText.value = text
     }
 }
