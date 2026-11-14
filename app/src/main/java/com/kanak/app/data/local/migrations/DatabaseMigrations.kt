@@ -76,4 +76,11 @@ object DatabaseMigrations {
             db.execSQL("ALTER TABLE expenses ADD COLUMN profile TEXT NOT NULL DEFAULT 'MY_EXPENSES'")
         }
     }
+
+    /** Rename the temporary internal profile key without moving existing expenses. */
+    val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("UPDATE expenses SET profile = 'OTHER_EXPENSES' WHERE profile = 'GIRLFRIEND_EXPENSES'")
+        }
+    }
 }

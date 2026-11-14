@@ -262,7 +262,7 @@ private fun ExpenseProfilesSection(
                 Text("✓ Currently active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 if (isMyExpenses) {
                     KanakSecondaryButton(
-                        onClick = { onSelect(ExpenseProfile.GIRLFRIEND_EXPENSES) },
+                        onClick = { onSelect(ExpenseProfile.OTHER_EXPENSES) },
                         modifier = Modifier.fillMaxWidth(),
                         text = "Switch to Other Expenses"
                     )

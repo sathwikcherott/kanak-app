@@ -23,16 +23,16 @@ class ExpenseProfileTest {
     @Test fun profileManager_startsInMyExpenses_andCanReturnThere() {
         val profiles = ExpenseProfileManager()
         assertEquals(ExpenseProfile.MY_EXPENSES, profiles.activeProfile.value)
-        profiles.select(ExpenseProfile.GIRLFRIEND_EXPENSES)
+        profiles.select(ExpenseProfile.OTHER_EXPENSES)
         profiles.returnToMyExpenses()
         assertEquals(ExpenseProfile.MY_EXPENSES, profiles.activeProfile.value)
     }
 
-    @Test fun version4Backup_roundTripsExpenseProfile() {
+    @Test fun version5Backup_roundTripsExpenseProfile() {
         val backup = KanakBackup(expenses = listOf(
-            BackupExpense(1L, 100L, "INR", 1000L, profile = ExpenseProfile.GIRLFRIEND_EXPENSES)
+            BackupExpense(1L, 100L, "INR", 1000L, profile = ExpenseProfile.OTHER_EXPENSES)
         ))
-        assertEquals(ExpenseProfile.GIRLFRIEND_EXPENSES,
+        assertEquals(ExpenseProfile.OTHER_EXPENSES,
             KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup)).expenses.single().profile)
     }
 
@@ -42,20 +42,32 @@ class ExpenseProfileTest {
             KanakBackupSerializer.fromJson(KanakBackupSerializer.toJson(backup)).expenses.single().profile)
     }
 
+    @Test fun version4Backup_withLegacyProfileKey_restoresToOtherExpenses() {
+        val legacyBackup = KanakBackup(
+            version = 4,
+            expenses = listOf(BackupExpense(1L, 100L, "INR", 1000L, profile = ExpenseProfile.OTHER_EXPENSES))
+        )
+        val legacyJson = KanakBackupSerializer.toJson(legacyBackup)
+            .replace("OTHER_EXPENSES", "GIRLFRIEND_EXPENSES")
+
+        assertEquals(ExpenseProfile.OTHER_EXPENSES,
+            KanakBackupSerializer.fromJson(legacyJson).expenses.single().profile)
+    }
+
     @Test fun profiledRepository_filtersViews_and_marksNewEntriesWithActiveProfile() = runBlocking {
         val profiles = ExpenseProfileManager()
         val base = FakeExpenseRepository(listOf(
             Expense(id = 1, amountMinor = 100, profile = ExpenseProfile.MY_EXPENSES),
-            Expense(id = 2, amountMinor = 200, profile = ExpenseProfile.GIRLFRIEND_EXPENSES)
+            Expense(id = 2, amountMinor = 200, profile = ExpenseProfile.OTHER_EXPENSES)
         ))
         val repository = ProfiledExpenseRepository(base, profiles)
 
         assertEquals(listOf(1L), repository.getAllExpenses().first().map { it.id })
-        profiles.select(ExpenseProfile.GIRLFRIEND_EXPENSES)
+        profiles.select(ExpenseProfile.OTHER_EXPENSES)
         assertEquals(listOf(2L), repository.getAllExpenses().first().map { it.id })
 
         repository.saveExpense(Expense(amountMinor = 300))
-        assertEquals(ExpenseProfile.GIRLFRIEND_EXPENSES, base.saved.profile)
+        assertEquals(ExpenseProfile.OTHER_EXPENSES, base.saved.profile)
     }
 
     private class FakeExpenseRepository(expenses: List<Expense>) : ExpenseRepository {

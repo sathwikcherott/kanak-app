@@ -32,14 +32,15 @@ class CustomCategoryPersistenceTest {
         .addMigrations(
             DatabaseMigrations.MIGRATION_1_2, DatabaseMigrations.MIGRATION_2_3,
             DatabaseMigrations.MIGRATION_3_4, DatabaseMigrations.MIGRATION_4_5,
-            DatabaseMigrations.MIGRATION_5_6, DatabaseMigrations.MIGRATION_6_7
+            DatabaseMigrations.MIGRATION_5_6, DatabaseMigrations.MIGRATION_6_7,
+            DatabaseMigrations.MIGRATION_7_8
         ).build()
 
     @Test fun migrationsFromEveryExistingSchemaPreserveFinancialDataAndBuiltInCategory() = runBlocking {
         val techId = "custom:11111111-1234-1234-1234-123456789012"
         val gamesId = "custom:22222222-1234-1234-1234-123456789012"
         val petsId = "custom:33333333-1234-1234-1234-123456789012"
-        for (version in 1..6) {
+        for (version in 1..7) {
             val name = "migration-" + version + "-" + UUID.randomUUID() + ".db"
             val path = context.getDatabasePath(name)
             path.parentFile!!.mkdirs()

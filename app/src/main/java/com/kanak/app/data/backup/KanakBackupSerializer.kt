@@ -274,7 +274,7 @@ object KanakBackupSerializer {
             val profile = if (version >= 4) {
                 val profileStr = expMap["profile"] as? String
                     ?: throw BackupException.MissingRequiredField("Missing profile for expense ID $idRaw")
-                try { ExpenseProfile.valueOf(profileStr) } catch (_: Exception) {
+                if (profileStr == "GIRLFRIEND_EXPENSES") ExpenseProfile.OTHER_EXPENSES else try { ExpenseProfile.valueOf(profileStr) } catch (_: Exception) {
                     throw BackupException.UnknownEnum("Unknown expense profile: '$profileStr' for expense ID $idRaw")
                 }
             } else ExpenseProfile.MY_EXPENSES

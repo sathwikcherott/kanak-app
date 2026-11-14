@@ -75,7 +75,7 @@ data class KanakBackup(
 ) {
     companion object {
         const val FORMAT_IDENTIFIER = "kanak_backup"
-        const val CURRENT_BACKUP_VERSION = 4
+        const val CURRENT_BACKUP_VERSION = 5
         const val MAX_BACKUP_BYTES = 10 * 1024 * 1024L // 10 MiB; enforced before decoding file bytes
         const val MAX_EXPENSE_RECORDS = 50_000
     }
