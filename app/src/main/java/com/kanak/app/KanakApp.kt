@@ -18,6 +18,7 @@ import com.kanak.app.data.repository.ProfiledExpenseRepository
 import com.kanak.app.voice.AndroidVoiceInputRepository
 import com.kanak.app.voice.VoiceInputRepository
 import com.kanak.app.smartinbox.SmartInboxRepository
+import com.kanak.app.update.UpdateController
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -42,6 +43,7 @@ class KanakApp : Application() {
     val expenseProfiles by lazy { ExpenseProfileManager() }
     val profiledExpenseRepository by lazy { ProfiledExpenseRepository(expenseRepository, expenseProfiles) }
     val smartInboxRepository by lazy { SmartInboxRepository(database) }
+    internal val updateController by lazy { UpdateController(this) }
     private val backupDocumentStore by lazy { AndroidBackupDocumentStore(this) }
     val backupFileCatalog by lazy { BackupFileCatalog(backupDocumentStore) }
     internal val autoBackupController by lazy {
@@ -60,6 +62,16 @@ class KanakApp : Application() {
                 throw e
             } catch (e: Exception) {
                 android.util.Log.w("Kanak", "Could not restore automatic backup schedule", e)
+            }
+        }
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            try {
+                updateController.scheduleChecks()
+                updateController.checkAndDownload()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("Kanak", "Could not check for an app update", e)
             }
         }
     }
