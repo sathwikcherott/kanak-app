@@ -54,6 +54,7 @@ import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.model.ExpenseProfile
 import com.kanak.app.designsystem.components.KanakCard
 import com.kanak.app.designsystem.components.KanakPrimaryButton
+import com.kanak.app.designsystem.components.KanakSecondaryButton
 import com.kanak.app.designsystem.theme.KanakCornerRadius
 import com.kanak.app.designsystem.theme.KanakSpacing
 import java.text.SimpleDateFormat
@@ -246,19 +247,30 @@ private fun ExpenseProfilesSection(
     activeProfile: ExpenseProfile,
     onSelect: (ExpenseProfile) -> Unit
 ) {
+    val isMyExpenses = activeProfile == ExpenseProfile.MY_EXPENSES
     Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
         Text("EXPENSE PROFILES", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
         KanakCard(modifier = Modifier.fillMaxWidth()) {
             Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
-                Text("My Expenses", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Your default profile. Kanak always opens here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (activeProfile == ExpenseProfile.MY_EXPENSES) {
-                    Text("Currently active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(activeProfile.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (isMyExpenses) "Your default profile. Kanak always opens here."
+                    else "Keep occasional expenses separate from My Expenses.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text("✓ Currently active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                if (isMyExpenses) {
+                    KanakSecondaryButton(
+                        onClick = { onSelect(ExpenseProfile.GIRLFRIEND_EXPENSES) },
+                        modifier = Modifier.fillMaxWidth(),
+                        text = "Switch to Girlfriend Expenses"
+                    )
                 } else {
-                    OutlinedButton(onClick = { onSelect(ExpenseProfile.MY_EXPENSES) }) { Text("Return to My Expenses") }
-                }
-                TextButton(onClick = { onSelect(ExpenseProfile.GIRLFRIEND_EXPENSES) }) {
-                    Text(if (activeProfile == ExpenseProfile.GIRLFRIEND_EXPENSES) "Girlfriend Expenses is active" else "Switch to Girlfriend Expenses")
+                    KanakPrimaryButton(
+                        onClick = { onSelect(ExpenseProfile.MY_EXPENSES) },
+                        text = "Return to My Expenses"
+                    )
                 }
             }
         }
