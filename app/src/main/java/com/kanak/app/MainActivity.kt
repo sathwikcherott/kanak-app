@@ -52,29 +52,29 @@ class MainActivity : ComponentActivity() {
     private val sharedText = MutableStateFlow<String?>(null)
 
     private val homeViewModel: HomeViewModel by viewModels {
-        HomeViewModel.Factory((application as KanakApp).expenseRepository)
+        HomeViewModel.Factory((application as KanakApp).profiledExpenseRepository)
     }
 
     private val quickEntryViewModel: QuickEntryViewModel by viewModels {
         val app = application as KanakApp
         QuickEntryViewModel.Factory(
-            repository = app.expenseRepository,
+            repository = app.profiledExpenseRepository,
             voiceInputRepository = app.voiceInputRepository,
             aiCategorizer = app.cloudAiCategorizer
         )
     }
 
     private val transactionsViewModel: TransactionsViewModel by viewModels {
-        TransactionsViewModel.Factory((application as KanakApp).expenseRepository)
+        TransactionsViewModel.Factory((application as KanakApp).profiledExpenseRepository)
     }
 
     private val analyticsViewModel: AnalyticsViewModel by viewModels {
-        AnalyticsViewModel.Factory((application as KanakApp).expenseRepository)
+        AnalyticsViewModel.Factory((application as KanakApp).profiledExpenseRepository)
     }
 
     private val settingsViewModel: SettingsViewModel by viewModels {
         val app = application as KanakApp
-        SettingsViewModel.Factory(app.expenseRepository, app.backupRepository)
+        SettingsViewModel.Factory(app.profiledExpenseRepository, app.backupRepository, app.expenseProfiles)
     }
 
     private val backupFilesViewModel: BackupFilesViewModel by viewModels {
@@ -220,6 +220,7 @@ class MainActivity : ComponentActivity() {
                                 onClearBackupError = settingsViewModel::clearBackupError,
                                 onClearUserMessage = settingsViewModel::clearUserMessage,
                                 onOpenSmartInbox = { showSmartInbox = true },
+                                onSelectExpenseProfile = settingsViewModel::selectExpenseProfile,
                                 modifier = Modifier.fillMaxSize()
                             )
                         }
