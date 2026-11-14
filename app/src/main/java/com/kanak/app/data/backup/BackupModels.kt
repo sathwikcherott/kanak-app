@@ -5,6 +5,7 @@ import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
 import com.kanak.app.model.Expense
 import com.kanak.app.model.ExpenseCategory
+import com.kanak.app.model.ExpenseProfile
 
 sealed class BackupException(message: String) : Exception(message) {
     class CorruptedJson(message: String) : BackupException(message)
@@ -31,7 +32,8 @@ data class BackupExpense(
     val note: String? = null,
     val category: ExpenseCategory? = null,
     val source: EntrySource = EntrySource.TYPED,
-    val categorizationState: CategorizationState = CategorizationState.CONFIRMED
+    val categorizationState: CategorizationState = CategorizationState.CONFIRMED,
+    val profile: ExpenseProfile = ExpenseProfile.MY_EXPENSES
 ) {
     fun toDomainModel(): Expense = Expense(
         id = id,
@@ -41,7 +43,8 @@ data class BackupExpense(
         note = note,
         category = category,
         source = source,
-        categorizationState = categorizationState
+        categorizationState = categorizationState,
+        profile = profile
     )
 
     companion object {
@@ -53,7 +56,8 @@ data class BackupExpense(
             note = expense.note,
             category = expense.category,
             source = expense.source,
-            categorizationState = expense.categorizationState
+            categorizationState = expense.categorizationState,
+            profile = expense.profile
         )
     }
 }
@@ -71,7 +75,7 @@ data class KanakBackup(
 ) {
     companion object {
         const val FORMAT_IDENTIFIER = "kanak_backup"
-        const val CURRENT_BACKUP_VERSION = 3
+        const val CURRENT_BACKUP_VERSION = 4
         const val MAX_BACKUP_BYTES = 10 * 1024 * 1024L // 10 MiB; enforced before decoding file bytes
         const val MAX_EXPENSE_RECORDS = 50_000
     }

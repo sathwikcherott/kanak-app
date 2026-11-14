@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.kanak.app.ai.AiConnectionStore
 import com.kanak.app.data.backup.BackupSummary
 import com.kanak.app.data.local.datastore.ThemePreference
+import com.kanak.app.model.ExpenseProfile
 import com.kanak.app.designsystem.components.KanakCard
 import com.kanak.app.designsystem.components.KanakPrimaryButton
 import com.kanak.app.designsystem.theme.KanakCornerRadius
@@ -90,6 +91,7 @@ fun SettingsScreen(
     aiConnection: AiConnectionStore? = null,
     autoBackupContent: @Composable () -> Unit = {},
     onOpenSmartInbox: () -> Unit = {},
+    onSelectExpenseProfile: (ExpenseProfile) -> Unit = {},
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -168,6 +170,10 @@ fun SettingsScreen(
                 }
 
                 item {
+                    ExpenseProfilesSection(uiState.activeExpenseProfile, onSelectExpenseProfile)
+                }
+
+                item {
                     BackupAndRestoreSection(
                         lastBackupTime = uiState.lastBackupExportedTime,
                         isExporting = uiState.isExportingBackup,
@@ -230,6 +236,30 @@ fun SettingsScreen(
                     errorMessage = uiState.backupError,
                     onDismiss = onClearBackupError
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExpenseProfilesSection(
+    activeProfile: ExpenseProfile,
+    onSelect: (ExpenseProfile) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+        Text("EXPENSE PROFILES", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        KanakCard(modifier = Modifier.fillMaxWidth()) {
+            Column(verticalArrangement = Arrangement.spacedBy(KanakSpacing.small)) {
+                Text("My Expenses", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text("Your default profile. Kanak always opens here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (activeProfile == ExpenseProfile.MY_EXPENSES) {
+                    Text("Currently active", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    OutlinedButton(onClick = { onSelect(ExpenseProfile.MY_EXPENSES) }) { Text("Return to My Expenses") }
+                }
+                TextButton(onClick = { onSelect(ExpenseProfile.GIRLFRIEND_EXPENSES) }) {
+                    Text(if (activeProfile == ExpenseProfile.GIRLFRIEND_EXPENSES) "Girlfriend Expenses is active" else "Switch to Girlfriend Expenses")
+                }
             }
         }
     }

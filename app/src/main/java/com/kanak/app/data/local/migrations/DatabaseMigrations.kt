@@ -69,4 +69,11 @@ object DatabaseMigrations {
             db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_merchant_knowledge_normalized_alias` ON `merchant_knowledge` (`normalized_alias`)")
         }
     }
+
+    /** Existing expenses are always retained in the default profile. */
+    val MIGRATION_6_7: Migration = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE expenses ADD COLUMN profile TEXT NOT NULL DEFAULT 'MY_EXPENSES'")
+        }
+    }
 }

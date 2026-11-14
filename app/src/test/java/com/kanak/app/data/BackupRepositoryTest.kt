@@ -502,7 +502,7 @@ class BackupRepositoryTest {
         val unsupportedVersionJson = """
             {
               "format": "kanak_backup",
-              "version": 4,
+              "version": 5,
               "exportedAt": 1000,
               "preferences": { "defaultCurrency": "INR", "themePreference": "DARK" },
               "expenses": []
@@ -511,9 +511,9 @@ class BackupRepositoryTest {
 
         try {
             KanakBackupSerializer.fromJson(unsupportedVersionJson)
-            fail("Should reject version 4")
+            fail("Should reject version 5")
         } catch (e: BackupException.UnsupportedSchemaVersion) {
-            assertEquals(4L, e.version)
+            assertEquals(5L, e.version)
         }
     }
 

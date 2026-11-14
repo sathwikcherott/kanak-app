@@ -4,6 +4,7 @@ import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.model.CategorizationState
 import com.kanak.app.model.EntrySource
 import com.kanak.app.model.ExpenseCategory
+import com.kanak.app.model.ExpenseProfile
 
 object KanakBackupSerializer {
 
@@ -74,7 +75,9 @@ object KanakBackupSerializer {
             sb.append("      \"note\": ").append(if (exp.note != null) "\"${escapeJson(exp.note)}\"" else "null").append(",\n")
             sb.append("      \"category\": ").append(if (exp.category != null) "\"${exp.category.name}\"" else "null").append(",\n")
             sb.append("      \"source\": \"").append(exp.source.name).append("\",\n")
-            sb.append("      \"categorizationState\": \"").append(exp.categorizationState.name).append("\"\n")
+            sb.append("      \"categorizationState\": \"").append(exp.categorizationState.name).append("\"")
+            if (backup.version >= 4) sb.append(",\n      \"profile\": \"").append(exp.profile.name).append("\"")
+            sb.append("\n")
             sb.append("    }").append(if (index < backup.expenses.size - 1) ",\n" else "\n")
         }
         sb.append("  ]")
@@ -268,6 +271,14 @@ object KanakBackupSerializer {
                 throw BackupException.UnknownEnum("Unknown categorization state: '$stateStr' for expense ID $idRaw")
             }
 
+            val profile = if (version >= 4) {
+                val profileStr = expMap["profile"] as? String
+                    ?: throw BackupException.MissingRequiredField("Missing profile for expense ID $idRaw")
+                try { ExpenseProfile.valueOf(profileStr) } catch (_: Exception) {
+                    throw BackupException.UnknownEnum("Unknown expense profile: '$profileStr' for expense ID $idRaw")
+                }
+            } else ExpenseProfile.MY_EXPENSES
+
             backupExpenses.add(
                 BackupExpense(
                     id = idRaw,
@@ -277,7 +288,8 @@ object KanakBackupSerializer {
                     note = note,
                     category = category,
                     source = source,
-                    categorizationState = categorizationState
+                    categorizationState = categorizationState,
+                    profile = profile
                 )
             )
         }

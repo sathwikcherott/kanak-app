@@ -10,6 +10,8 @@ import kotlinx.coroutines.CancellationException
 import com.kanak.app.data.backup.BackupRepository
 import com.kanak.app.data.local.datastore.ThemePreference
 import com.kanak.app.data.repository.ExpenseRepository
+import com.kanak.app.data.repository.ExpenseProfileManager
+import com.kanak.app.model.ExpenseProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +21,8 @@ import kotlinx.coroutines.launch
 
 class SettingsViewModel(
     private val expenseRepository: ExpenseRepository,
-    private val backupRepository: BackupRepository
+    private val backupRepository: BackupRepository,
+    private val expenseProfiles: ExpenseProfileManager = ExpenseProfileManager()
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -29,6 +32,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             expenseRepository.getThemePreference().collectLatest { theme ->
                 _uiState.update { it.copy(themePreference = theme) }
+            }
+        }
+        viewModelScope.launch {
+            expenseProfiles.activeProfile.collectLatest { profile ->
+                _uiState.update { it.copy(activeExpenseProfile = profile) }
             }
         }
 
@@ -144,13 +152,18 @@ class SettingsViewModel(
         _uiState.update { it.copy(userMessage = null, restoreWarning = null) }
     }
 
+    fun selectExpenseProfile(profile: ExpenseProfile) {
+        expenseProfiles.select(profile)
+    }
+
     class Factory(
         private val expenseRepository: ExpenseRepository,
-        private val backupRepository: BackupRepository
+        private val backupRepository: BackupRepository,
+        private val expenseProfiles: ExpenseProfileManager = ExpenseProfileManager()
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return SettingsViewModel(expenseRepository, backupRepository) as T
+            return SettingsViewModel(expenseRepository, backupRepository, expenseProfiles) as T
         }
     }
 }

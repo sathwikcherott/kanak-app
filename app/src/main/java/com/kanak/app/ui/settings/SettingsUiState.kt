@@ -2,6 +2,7 @@ package com.kanak.app.ui.settings
 
 import com.kanak.app.data.backup.BackupSummary
 import com.kanak.app.data.local.datastore.ThemePreference
+import com.kanak.app.model.ExpenseProfile
 
 data class SettingsUiState(
     val themePreference: ThemePreference = ThemePreference.DARK,
@@ -14,7 +15,8 @@ data class SettingsUiState(
     val isRestoringBackup: Boolean = false,
     val backupError: String? = null,
     val restoreWarning: String? = null,
-    val userMessage: String? = null
+    val userMessage: String? = null,
+    val activeExpenseProfile: ExpenseProfile = ExpenseProfile.MY_EXPENSES
 ) {
     val backupBusy: Boolean get() = isExportingBackup || isRestoringBackup
 }

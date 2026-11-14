@@ -13,6 +13,8 @@ import com.kanak.app.data.backup.OfflineBackupRepository
 import com.kanak.app.data.local.KanakDatabase
 import com.kanak.app.data.local.datastore.UserPreferencesRepository
 import com.kanak.app.data.repository.OfflineExpenseRepository
+import com.kanak.app.data.repository.ExpenseProfileManager
+import com.kanak.app.data.repository.ProfiledExpenseRepository
 import com.kanak.app.voice.AndroidVoiceInputRepository
 import com.kanak.app.voice.VoiceInputRepository
 import com.kanak.app.smartinbox.SmartInboxRepository
@@ -37,6 +39,8 @@ class KanakApp : Application() {
             database = database
         )
     }
+    val expenseProfiles by lazy { ExpenseProfileManager() }
+    val profiledExpenseRepository by lazy { ProfiledExpenseRepository(expenseRepository, expenseProfiles) }
     val smartInboxRepository by lazy { SmartInboxRepository(database) }
     private val backupDocumentStore by lazy { AndroidBackupDocumentStore(this) }
     val backupFileCatalog by lazy { BackupFileCatalog(backupDocumentStore) }

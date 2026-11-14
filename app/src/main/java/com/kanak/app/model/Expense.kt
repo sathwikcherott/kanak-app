@@ -25,7 +25,8 @@ data class Expense(
     val note: String? = null,
     val category: ExpenseCategory? = null,
     val source: EntrySource = EntrySource.TYPED,
-    val categorizationState: CategorizationState = if (category != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED
+    val categorizationState: CategorizationState = if (category != null) CategorizationState.CONFIRMED else CategorizationState.UNCATEGORIZED,
+    val profile: ExpenseProfile = ExpenseProfile.MY_EXPENSES
 ) {
     /**
      * Converts minor integer units to formatted decimal string using integer arithmetic (avoiding Float/Double).
