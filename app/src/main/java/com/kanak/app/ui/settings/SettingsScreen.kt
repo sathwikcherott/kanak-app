@@ -264,7 +264,7 @@ private fun ExpenseProfilesSection(
                     KanakSecondaryButton(
                         onClick = { onSelect(ExpenseProfile.GIRLFRIEND_EXPENSES) },
                         modifier = Modifier.fillMaxWidth(),
-                        text = "Switch to Girlfriend Expenses"
+                        text = "Switch to Other Expenses"
                     )
                 } else {
                     KanakPrimaryButton(
